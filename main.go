@@ -7,37 +7,40 @@ import (
 )
 
 var (
-	profile         string
-	allProfiles     bool
-	forceRefresh    bool
-	configure       bool
-	mode            string
-	noVerifySSL     bool
-	noPrompt        bool
-	disableLeakless bool
-	fastPass        bool
+	profile          string
+	allProfiles      bool
+	forceRefresh     bool
+	configure        bool
+	mode             string
+	noVerifySSL      bool
+	noPrompt         bool
+	disableLeakless  bool
+	fastPass         bool
+	useSystemBrowser bool
 )
 
 func init() {
 	const (
-		profileDefaultValue         = ""
-		profileUsage                = "The name of the profile to log in with (or configure)"
-		allProfilesDefaultValue     = false
-		allProfilesUsage            = "Run for all configured profiles"
-		forceRefreshDefaultValue    = false
-		forceRefreshUsage           = "Force a credential refresh, even if they are still valid"
-		configureDefaultValue       = false
-		configureUsage              = "Configure the profile"
-		modeDefaultValue            = "cli"
-		modeUsage                   = "'cli' to hide the login page and perform the login through the CLI (default behavior), 'gui' to perform the login through the Azure GUI (more reliable but only works on GUI operating system), 'debug' to show the login page but perform the login through the CLI (useful to debug issues with the CLI login)"
-		noVerifySSLDefaultValue     = false
-		noVerifySSLUsage            = "Disable SSL Peer Verification for connections to AWS (no effect if behind proxy)"
-		noPromptDefaultValue        = false
-		noPromptUsage               = "Do not prompt for input and accept the default choice"
-		disableLeaklessDefaultValue = false
-		disableLeaklessUsage        = "Disable leakless if you are having issues with it"
-		fastPassDefaultValue        = false
-		fastPassUsage               = "Use Okta FastPass verification"
+		profileDefaultValue          = ""
+		profileUsage                 = "The name of the profile to log in with (or configure)"
+		allProfilesDefaultValue      = false
+		allProfilesUsage             = "Run for all configured profiles"
+		forceRefreshDefaultValue     = false
+		forceRefreshUsage            = "Force a credential refresh, even if they are still valid"
+		configureDefaultValue        = false
+		configureUsage               = "Configure the profile"
+		modeDefaultValue             = "cli"
+		modeUsage                    = "'cli' to hide the login page and perform the login through the CLI (default behavior), 'gui' to perform the login through the Azure GUI (more reliable but only works on GUI operating system), 'debug' to show the login page but perform the login through the CLI (useful to debug issues with the CLI login)"
+		noVerifySSLDefaultValue      = false
+		noVerifySSLUsage             = "Disable SSL Peer Verification for connections to AWS (no effect if behind proxy)"
+		noPromptDefaultValue         = false
+		noPromptUsage                = "Do not prompt for input and accept the default choice"
+		disableLeaklessDefaultValue  = false
+		disableLeaklessUsage         = "Disable leakless if you are having issues with it"
+		fastPassDefaultValue         = false
+		fastPassUsage                = "Use Okta FastPass verification"
+		useSystemBrowserDefaultValue = false
+		useSystemBrowserUsage        = "Use System Browser"
 	)
 
 	flag.StringVar(&profile, "profile", profileDefaultValue, profileUsage)
@@ -54,6 +57,7 @@ func init() {
 	flag.BoolVar(&noPrompt, "no-prompt", noPromptDefaultValue, noPromptUsage)
 	flag.BoolVar(&disableLeakless, "disable-leakless", disableLeaklessDefaultValue, disableLeaklessUsage)
 	flag.BoolVar(&fastPass, "fastpass", fastPassDefaultValue, fastPassUsage)
+	flag.BoolVar(&useSystemBrowser, "system-browser", useSystemBrowserDefaultValue, useSystemBrowserUsage)
 
 	flag.Parse()
 	if flag.NArg() > 0 {
@@ -79,9 +83,9 @@ func main() {
 		configureProfile(profileName)
 	} else {
 		if allProfiles {
-			loginAll(forceRefresh, noVerifySSL, noPrompt, isGui, disableLeakless, fastPass)
+			loginAll(forceRefresh, noVerifySSL, noPrompt, isGui, disableLeakless, fastPass, useSystemBrowser)
 		} else {
-			login(profileName, noVerifySSL, noPrompt, isGui, disableLeakless, fastPass)
+			login(profileName, noVerifySSL, noPrompt, isGui, disableLeakless, fastPass, useSystemBrowser)
 		}
 	}
 
