@@ -1,4 +1,4 @@
-module github.com/luneo7/go-aws-azure-login
+module github.com/ZhuMon/go-aws-azure-login
 
 go 1.24.3
 
