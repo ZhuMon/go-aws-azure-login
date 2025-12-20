@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -115,7 +114,12 @@ func login(profileName string, opts LoginOptions) {
 
 	loginUrl := createLoginUrl(profile.AzureAppIDUri, profile.AzureTenantID, assertionConsumerServiceURL)
 
-	saml := performLogin(loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.ShowBrowser, opts.DisableLeakless, opts.FastPass, opts.UseSystemBrowser)
+	saml := performLogin(opts.Ctx, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.IsDebug, opts.ShowBrowser, opts.DisableLeakless, opts.FastPass, opts.UseSystemBrowser)
+
+	if saml == "" {
+		log.Info().Str("profile", profileName).Msg("Login cancelled")
+		return
+	}
 
 	log.Info().Msg("SAML response received, parsing roles")
 
@@ -149,16 +153,26 @@ func loginAll(opts LoginOptions) {
 	}
 
 	if len(profilesToLogin) == 0 {
-		fmt.Println("No profiles need refresh")
+		log.Info().Msg("No profiles need refresh")
 		return
 	}
 
 	// Create browser once and reuse for all profiles
-	browser, cleanup := createBrowser(opts.ShowBrowser, opts.DisableLeakless, opts.UseSystemBrowser)
+	browser, cleanup := createBrowser(opts.Ctx, opts.ShowBrowser, opts.DisableLeakless, opts.UseSystemBrowser)
 	defer cleanup()
 
+	if browser == nil {
+		return
+	}
+
 	for i, profileName := range profilesToLogin {
-		fmt.Printf("\n[%d/%d] Logging in profile: %s\n", i+1, len(profilesToLogin), profileName)
+		// Check if context was cancelled (e.g., Ctrl+C)
+		select {
+		case <-opts.Ctx.Done():
+			return
+		default:
+		}
+		log.Info().Int("current", i+1).Int("total", len(profilesToLogin)).Str("profile", profileName).Msg("Logging in profile")
 		loginWithBrowser(browser, profileName, opts)
 	}
 }
@@ -178,7 +192,12 @@ func loginWithBrowser(browser *rod.Browser, profileName string, opts LoginOption
 
 	loginUrl := createLoginUrl(profile.AzureAppIDUri, profile.AzureTenantID, assertionConsumerServiceURL)
 
-	saml := performLoginWithBrowser(browser, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.FastPass)
+	saml := performLoginWithBrowser(opts.Ctx, browser, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.IsDebug, opts.FastPass)
+
+	if saml == "" {
+		log.Info().Str("profile", profileName).Msg("Login cancelled")
+		return
+	}
 
 	roles := parseRolesFromSamlResponse(saml)
 

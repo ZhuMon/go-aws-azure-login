@@ -1,12 +1,55 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	"github.com/rs/zerolog"
 )
+
+// Global context for graceful shutdown
+var appCtx context.Context
+var appCancel context.CancelFunc
+var sigChan = make(chan os.Signal, 1)
+
+func init() {
+	// Create cancellable context
+	appCtx, appCancel = context.WithCancel(context.Background())
+
+	// Register signal handler
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+
+	// Handle signals in goroutine
+	go func() {
+		for sig := range sigChan {
+			fmt.Fprintf(os.Stderr, "\nReceived signal: %v, shutting down...\n", sig)
+			appCancel()
+			os.Exit(0)
+		}
+	}()
+
+	// Monitor stdin for 'q' to quit (workaround for Chromium intercepting Ctrl+C)
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return // stdin closed
+			}
+			if strings.TrimSpace(strings.ToLower(line)) == "q" {
+				fmt.Fprintln(os.Stderr, "\nQuitting...")
+				appCancel()
+				os.Exit(0)
+			}
+		}
+	}()
+}
 
 var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
@@ -72,8 +115,11 @@ func init() {
 }
 
 func main() {
+	defer appCancel()
+
 	var profileName string
 	isGui := mode == "gui"
+	isDebug := mode == "debug"
 	showBrowser := mode == "gui" || mode == "debug"
 
 	if profile != "" {
@@ -85,8 +131,10 @@ func main() {
 	}
 
 	opts := LoginOptions{
+		Ctx:              appCtx,
 		NoPrompt:         noPrompt,
 		IsGui:            isGui,
+		IsDebug:          isDebug,
 		ShowBrowser:      showBrowser,
 		DisableLeakless:  disableLeakless,
 		FastPass:         fastPass,
@@ -98,10 +146,23 @@ func main() {
 	if configure {
 		configureProfile(profileName)
 	} else {
-		if allProfiles {
-			loginAll(opts)
-		} else {
-			login(profileName, opts)
+		log.Info().Msg("Press 'q' + Enter to quit")
+		done := make(chan struct{})
+		go func() {
+			if allProfiles {
+				loginAll(opts)
+			} else {
+				login(profileName, opts)
+			}
+			close(done)
+		}()
+
+		// Wait for completion or context cancellation (from signal handler)
+		select {
+		case <-done:
+			// Normal completion
+		case <-appCtx.Done():
+			// Signal received, exit handled by goroutine
 		}
 	}
 }

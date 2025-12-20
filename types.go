@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/xml"
 
 	"github.com/go-rod/rod"
@@ -45,8 +46,10 @@ type role struct {
 }
 
 type LoginOptions struct {
+	Ctx              context.Context
 	NoPrompt         bool
 	IsGui            bool
+	IsDebug          bool
 	ShowBrowser      bool
 	DisableLeakless  bool
 	FastPass         bool
@@ -62,5 +65,6 @@ type HandlerContext struct {
 	DefaultOktaPassword *string
 	NoPrompt            bool
 	IsGui               bool
+	IsDebug             bool
 	PromptedStates      map[string]bool // Track which states have already prompted
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 
@@ -9,8 +10,8 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-func createBrowser(showBrowser bool, disableLeakless bool, useSystemBrowser bool) (*rod.Browser, func()) {
-	l := launcher.New().Headless(!showBrowser).UserDataDir(paths[CHROMIUM])
+func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, useSystemBrowser bool) (*rod.Browser, func()) {
+	l := launcher.New().Headless(!showBrowser).UserDataDir(paths[CHROMIUM]).Context(ctx)
 
 	if useSystemBrowser {
 		if path, exists := launcher.LookPath(); exists {
@@ -26,19 +27,29 @@ func createBrowser(showBrowser bool, disableLeakless bool, useSystemBrowser bool
 
 	u, err := l.Launch()
 	if err != nil {
+		// Context cancelled is expected on Ctrl+C
+		if ctx.Err() != nil {
+			return nil, func() {}
+		}
 		log.Fatal().Err(err).Msg("Failed to launch browser")
 	}
 
-	browser := rod.New().ControlURL(u)
+	browser := rod.New().Context(ctx).ControlURL(u)
 	err = browser.Connect()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, func() {}
+		}
 		log.Fatal().Err(err).Msg("Failed to connect to browser")
 	}
 
 	cleanup := func() {
-		if err := browser.Close(); err != nil {
-			log.Error().Err(err).Msg("Failed to close browser")
+		if browser != nil {
+			if err := browser.Close(); err != nil {
+				log.Error().Err(err).Msg("Failed to close browser")
+			}
 		}
+		l.Kill()
 	}
 
 	return browser, cleanup
@@ -85,17 +96,31 @@ func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- stri
 	}
 }
 
-func runStateLoop(page *rod.Page, samlResponseChan <-chan string, handlerCtx *HandlerContext, fastpass bool) string {
+func runStateLoop(ctx context.Context, page *rod.Page, samlResponseChan <-chan string, handlerCtx *HandlerContext, fastpass bool) string {
 	samlResponse := ""
 
-	if handlerCtx.IsGui && !handlerCtx.NoPrompt {
-		r, ok := <-samlResponseChan
-		if ok {
-			samlResponse = r
+	// Bind context to page so all operations can be cancelled
+	page = page.Context(ctx)
+
+	// Debug mode: just wait for SAML response, don't auto-operate
+	if handlerCtx.IsDebug {
+		select {
+		case r, ok := <-samlResponseChan:
+			if ok {
+				samlResponse = r
+			}
+		case <-ctx.Done():
+			return ""
 		}
 	} else {
 	Loop:
 		for {
+			select {
+			case <-ctx.Done():
+				return ""
+			default:
+			}
+
 			for _, st := range states {
 				select {
 				case r, ok := <-samlResponseChan:
@@ -103,6 +128,8 @@ func runStateLoop(page *rod.Page, samlResponseChan <-chan string, handlerCtx *Ha
 						samlResponse = r
 						break Loop
 					}
+				case <-ctx.Done():
+					return ""
 				default:
 				}
 
@@ -122,10 +149,14 @@ func runStateLoop(page *rod.Page, samlResponseChan <-chan string, handlerCtx *Ha
 	return samlResponse
 }
 
-func performLogin(urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
-	browser, cleanup := createBrowser(showBrowser, disableLeakless, useSystemBrowser)
+func performLogin(parentCtx context.Context, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
+	browser, cleanup := createBrowser(parentCtx, showBrowser, disableLeakless, useSystemBrowser)
 	defer cleanup()
 
+	if browser == nil {
+		return ""
+	}
+
 	router := browser.HijackRequests()
 	defer func() {
 		if err := router.Stop(); err != nil {
@@ -153,6 +184,18 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 		log.Error().Err(err).Msg("Failed to set viewport")
 	}
 
+	// Create context that cancels on parent cancel or page close
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	// Listen for page/browser close events
+	pageTargetID := page.TargetID
+	go browser.EachEvent(func(e *proto.TargetTargetDestroyed) {
+		if e.TargetID == pageTargetID {
+			cancel()
+		}
+	})()
+
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 	err = page.Navigate(urlString)
 	if err != nil {
@@ -167,13 +210,14 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 		DefaultOktaPassword: defaultOktaPassword,
 		NoPrompt:            noPrompt,
 		IsGui:               isGui,
+		IsDebug:             isDebug,
 		PromptedStates:      make(map[string]bool),
 	}
 
-	return runStateLoop(page, samlResponseChan, handlerCtx, fastpass)
+	return runStateLoop(ctx, page, samlResponseChan, handlerCtx, fastpass)
 }
 
-func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, fastpass bool) string {
+func performLoginWithBrowser(parentCtx context.Context, browser *rod.Browser, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, fastpass bool) string {
 	router := browser.HijackRequests()
 	defer func() {
 		if err := router.Stop(); err != nil {
@@ -201,6 +245,18 @@ func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bo
 		log.Error().Err(err).Msg("Failed to set viewport")
 	}
 
+	// Create context that cancels on parent cancel or page close
+	ctx, cancel := context.WithCancel(parentCtx)
+	defer cancel()
+
+	// Listen for page/browser close events
+	pageTargetID := page.TargetID
+	go browser.EachEvent(func(e *proto.TargetTargetDestroyed) {
+		if e.TargetID == pageTargetID {
+			cancel()
+		}
+	})()
+
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 	err = page.Navigate(urlString)
 	if err != nil {
@@ -215,10 +271,11 @@ func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bo
 		DefaultOktaPassword: defaultOktaPassword,
 		NoPrompt:            noPrompt,
 		IsGui:               isGui,
+		IsDebug:             isDebug,
 		PromptedStates:      make(map[string]bool),
 	}
 
-	samlResponse := runStateLoop(page, samlResponseChan, handlerCtx, fastpass)
+	samlResponse := runStateLoop(ctx, page, samlResponseChan, handlerCtx, fastpass)
 
 	// Close the page after login to prepare for next profile
 	if err := page.Close(); err != nil {
