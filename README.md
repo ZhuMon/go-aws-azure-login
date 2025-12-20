@@ -123,6 +123,12 @@ go-aws-azure-login -all-profiles
 go-aws-azure-login -force-refresh
 ```
 
+> **Note**: The tool automatically skips login if credentials are still valid. You'll see status messages like:
+> - `INF Credentials still valid, skipping refresh profile=myprofile`
+> - `INF Login successful profile=myprofile`
+>
+> Use `-force-refresh` to force a new login even when credentials haven't expired.
+
 ### Display Modes
 
 ```bash

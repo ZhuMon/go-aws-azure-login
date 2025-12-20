@@ -138,7 +138,11 @@ func askUserForRoleAndDuration(
 	}
 
 	if !(noPrompt && defaultDurationHours != "") {
-		inp := &survey.Input{Message: "Session Duration Hours (up to 12):", Default: defaultDurationHours}
+		inputDefault := defaultDurationHours
+		if inputDefault == "" {
+			inputDefault = "1"
+		}
+		inp := &survey.Input{Message: "Session Duration Hours (up to 12):", Default: inputDefault}
 		hq := ""
 
 		survey.AskOne(inp, &hq, survey.WithValidator(func(val interface{}) error {

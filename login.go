@@ -93,6 +93,12 @@ func loadProfile(profileName string) profileConfig {
 }
 
 func login(profileName string, opts LoginOptions) {
+	// Check if credentials are still valid (unless force refresh is requested)
+	if !opts.ForceRefresh && !isProfileAboutToExpire(profileName) {
+		log.Info().Str("profile", profileName).Msg("Credentials still valid, skipping refresh")
+		return
+	}
+
 	profile := loadProfile(profileName)
 
 	assertionConsumerServiceURL := AWS_SAML_ENDPOINT
@@ -114,6 +120,8 @@ func login(profileName string, opts LoginOptions) {
 	rl, durationHours := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
 
 	assumeRole(profileName, saml, rl, durationHours, opts.AwsNoVerifySsl, profile.Region)
+
+	log.Info().Str("profile", profileName).Msg("Login successful")
 }
 
 func loginAll(opts LoginOptions) {
@@ -171,4 +179,6 @@ func loginWithBrowser(browser *rod.Browser, profileName string, opts LoginOption
 	rl, durationHours := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
 
 	assumeRole(profileName, saml, rl, durationHours, opts.AwsNoVerifySsl, profile.Region)
+
+	log.Info().Str("profile", profileName).Msg("Login successful")
 }
