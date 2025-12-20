@@ -80,13 +80,24 @@ func main() {
 		profileName = "default"
 	}
 
+	opts := LoginOptions{
+		NoPrompt:         noPrompt,
+		IsGui:            isGui,
+		ShowBrowser:      showBrowser,
+		DisableLeakless:  disableLeakless,
+		FastPass:         fastPass,
+		UseSystemBrowser: useSystemBrowser,
+		AwsNoVerifySsl:   noVerifySSL,
+		ForceRefresh:     forceRefresh,
+	}
+
 	if configure {
 		configureProfile(profileName)
 	} else {
 		if allProfiles {
-			loginAll(forceRefresh, noVerifySSL, noPrompt, isGui, showBrowser, disableLeakless, fastPass, useSystemBrowser)
+			loginAll(opts)
 		} else {
-			login(profileName, noVerifySSL, noPrompt, isGui, showBrowser, disableLeakless, fastPass, useSystemBrowser)
+			login(profileName, opts)
 		}
 	}
 }
