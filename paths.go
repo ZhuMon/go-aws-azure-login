@@ -20,7 +20,7 @@ var awsDir = filepath.Join(userHomeDir, ".aws")
 var paths = map[PathType]string{
 	AWSDIR:      awsDir,
 	CONFIG:      ifThenElse(os.Getenv("AWS_CONFIG_FILE") != "", os.Getenv("AWS_CONFIG_FILE"), filepath.Join(awsDir, string(CONFIG))),
-	CREDENTIALS: ifThenElse(os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "", os.Getenv("AWS_CONFIG_FILE"), filepath.Join(awsDir, string(CREDENTIALS))),
+	CREDENTIALS: ifThenElse(os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "", os.Getenv("AWS_SHARED_CREDENTIALS_FILE"), filepath.Join(awsDir, string(CREDENTIALS))),
 	CHROMIUM:    filepath.Join(awsDir, string(CHROMIUM)),
 }
 
