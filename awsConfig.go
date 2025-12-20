@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -88,8 +87,7 @@ func isProfileAboutToExpire(profileName string) bool {
 		var err error
 		expirationDate, err = time.Parse(timeFormat, awsExpiration)
 		if err != nil {
-			fmt.Printf("Invalid profile expiration: %v", err)
-			os.Exit(1)
+			log.Fatal().Err(err).Str("profile", profileName).Msg("Invalid profile expiration format")
 		}
 	}
 
@@ -160,14 +158,12 @@ func setSectionValues(section *ini.Section, values interface{}) {
 func load(pathType PathType) *ini.File {
 	p, ok := paths[pathType]
 	if !ok {
-		fmt.Printf("Unknown config path type: %v", pathType)
-		os.Exit(1)
+		log.Fatal().Str("pathType", string(pathType)).Msg("Unknown config path type")
 	}
 
 	cfg, err := ini.Load(p)
 	if err != nil {
-		fmt.Printf("Fail to read file: %v", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Str("path", p).Msg("Failed to read config file")
 	}
 
 	return cfg
@@ -176,16 +172,16 @@ func load(pathType PathType) *ini.File {
 func save(pathType PathType, data *ini.File) {
 	p, ok := paths[pathType]
 	if !ok {
-		fmt.Printf("Unknown config path type: %v", pathType)
-		os.Exit(1)
+		log.Fatal().Str("pathType", string(pathType)).Msg("Unknown config path type")
 	}
 
 	if data == nil {
-		fmt.Printf("You must provide a data for saving")
-		os.Exit(1)
+		log.Fatal().Msg("Cannot save nil config data")
 	}
 
-	data.SaveTo(p)
+	if err := data.SaveTo(p); err != nil {
+		log.Fatal().Err(err).Str("path", p).Msg("Failed to save config file")
+	}
 }
 
 func stringToPointer(v string) *string {

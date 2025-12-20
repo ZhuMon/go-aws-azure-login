@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"os"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -15,36 +14,45 @@ func createBrowser(showBrowser bool, disableLeakless bool, useSystemBrowser bool
 
 	if useSystemBrowser {
 		if path, exists := launcher.LookPath(); exists {
-			fmt.Printf("Using browser from %s\n", path)
+			log.Info().Str("path", path).Msg("Using system browser")
 			l.Bin(path)
 		} else {
-			fmt.Println("No usable system browser found, falling back to own Chromium browser")
+			log.Warn().Msg("No usable system browser found, falling back to own Chromium browser")
 		}
 	}
 
 	l.Leakless(!disableLeakless)
 	l.Set("window-size", fmt.Sprintf("%d,%d", WIDTH, HEIGHT))
 
-	u := l.MustLaunch()
-	browser := rod.New().ControlURL(u).MustConnect()
+	u, err := l.Launch()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to launch browser")
+	}
+
+	browser := rod.New().ControlURL(u)
+	err = browser.Connect()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to connect to browser")
+	}
 
 	cleanup := func() {
-		browser.MustClose()
+		if err := browser.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close browser")
+		}
 	}
 
 	return browser, cleanup
 }
 
 func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- string) {
-	router.MustAdd("https://*amazon*", func(ctx *rod.Hijack) {
+	err := router.Add("https://*amazon*", "", func(ctx *rod.Hijack) {
 		reqURL := ctx.Request.URL().String()
 
 		if reqURL == AWS_SAML_ENDPOINT || reqURL == AWS_GOV_SAML_ENDPOINT || reqURL == AWS_CN_SAML_ENDPOINT {
 			val, err := url.ParseQuery(ctx.Request.Body())
 
 			if err != nil {
-				fmt.Printf("Fail to saml endpoint response: %v", err)
-				os.Exit(1)
+				log.Fatal().Err(err).Msg("Failed to parse SAML endpoint response")
 			}
 
 			samlResponseChan <- val.Get("SAMLResponse")
@@ -54,10 +62,13 @@ func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- stri
 			ctx.ContinueRequest(&proto.FetchContinueRequest{})
 		}
 	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to add Amazon hijack route")
+	}
 
-	router.MustAdd("https://*okta*", func(ctx *rod.Hijack) {
-		reqURL, error := url.Parse(ctx.Request.URL().String())
-		if error == nil {
+	err = router.Add("https://*okta*", "", func(ctx *rod.Hijack) {
+		reqURL, err := url.Parse(ctx.Request.URL().String())
+		if err == nil {
 			values := reqURL.Query()
 			if values.Has("username") {
 				values.Del("username")
@@ -69,6 +80,9 @@ func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- stri
 		}
 		ctx.ContinueRequest(&proto.FetchContinueRequest{})
 	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to add Okta hijack route")
+	}
 }
 
 func runStateLoop(page *rod.Page, samlResponseChan <-chan string, handlerCtx *HandlerContext, fastpass bool) string {
@@ -113,16 +127,23 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 	defer cleanup()
 
 	router := browser.HijackRequests()
-	defer router.MustStop()
+	defer func() {
+		if err := router.Stop(); err != nil {
+			log.Error().Err(err).Msg("Failed to stop hijack router")
+		}
+	}()
 
 	samlResponseChan := make(chan string, 1)
 	setupRequestHijacker(router, samlResponseChan)
 
 	go router.Run()
 
-	page := browser.MustPage()
+	page, err := browser.Page(proto.TargetCreateTarget{URL: ""})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create page")
+	}
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
-	err := page.Navigate(urlString)
+	err = page.Navigate(urlString)
 	if err != nil {
 		log.Fatal().Err(err).Str("url", urlString).Msg("Failed to navigate to login URL")
 	}
@@ -142,16 +163,23 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 
 func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, fastpass bool) string {
 	router := browser.HijackRequests()
-	defer router.MustStop()
+	defer func() {
+		if err := router.Stop(); err != nil {
+			log.Error().Err(err).Msg("Failed to stop hijack router")
+		}
+	}()
 
 	samlResponseChan := make(chan string, 1)
 	setupRequestHijacker(router, samlResponseChan)
 
 	go router.Run()
 
-	page := browser.MustPage()
+	page, err := browser.Page(proto.TargetCreateTarget{URL: ""})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create page")
+	}
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
-	err := page.Navigate(urlString)
+	err = page.Navigate(urlString)
 	if err != nil {
 		log.Fatal().Err(err).Str("url", urlString).Msg("Failed to navigate to login URL")
 	}
@@ -169,7 +197,9 @@ func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bo
 	samlResponse := runStateLoop(page, samlResponseChan, handlerCtx, fastpass)
 
 	// Close the page after login to prepare for next profile
-	page.MustClose()
+	if err := page.Close(); err != nil {
+		log.Error().Err(err).Msg("Failed to close page")
+	}
 
 	return samlResponse
 }

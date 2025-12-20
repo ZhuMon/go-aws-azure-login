@@ -7,9 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,42 +21,47 @@ import (
 func createLoginUrl(appIDUri string, tenantID string, assertionConsumerServiceURL string) string {
 	id := uuid.NewString()
 
-	samlRequest := fmt.Sprintf(`
-	<samlp:AuthnRequest xmlns="urn:oasis:names:tc:SAML:2.0:metadata" ID="id%s" Version="2.0" IssueInstant="%s" IsPassive="false" AssertionConsumerServiceURL="%s" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol">
-		<Issuer xmlns="urn:oasis:names:tc:SAML:2.0:assertion">%s</Issuer>
+	samlRequest := `
+	<samlp:AuthnRequest xmlns="urn:oasis:names:tc:SAML:2.0:metadata" ID="id` + id + `" Version="2.0" IssueInstant="` + time.Now().Format(time.RFC3339) + `" IsPassive="false" AssertionConsumerServiceURL="` + assertionConsumerServiceURL + `" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol">
+		<Issuer xmlns="urn:oasis:names:tc:SAML:2.0:assertion">` + appIDUri + `</Issuer>
 		<samlp:NameIDPolicy Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"></samlp:NameIDPolicy>
 	</samlp:AuthnRequest>
-	`, id, time.Now().Format(time.RFC3339), assertionConsumerServiceURL, appIDUri)
+	`
 
 	var buffer bytes.Buffer
 
-	flateWriter, _ := flate.NewWriter(&buffer, -1)
+	flateWriter, err := flate.NewWriter(&buffer, flate.DefaultCompression)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create flate writer")
+	}
 
-	flateWriter.Write([]byte(samlRequest))
-	flateWriter.Flush()
-	flateWriter.Close()
+	if _, err := flateWriter.Write([]byte(samlRequest)); err != nil {
+		log.Fatal().Err(err).Msg("Failed to write SAML request")
+	}
+	if err := flateWriter.Flush(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to flush flate writer")
+	}
+	if err := flateWriter.Close(); err != nil {
+		log.Fatal().Err(err).Msg("Failed to close flate writer")
+	}
 
 	samlBase64 := base64.StdEncoding.EncodeToString(buffer.Bytes())
 
-	return fmt.Sprintf("https://login.microsoftonline.com/%s/saml2?SAMLRequest=%s", tenantID, url.QueryEscape(samlBase64))
+	return "https://login.microsoftonline.com/" + tenantID + "/saml2?SAMLRequest=" + url.QueryEscape(samlBase64)
 }
 
 func parseRolesFromSamlResponse(assertion string) []role {
 	b64, err := base64.StdEncoding.DecodeString(assertion)
-
 	if err != nil {
-		fmt.Printf("Fail to parse roles: %v", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("Failed to decode SAML response")
 	}
 
 	var roles []role
 	var sResponse samlResponse
 
 	err = xml.Unmarshal(b64, &sResponse)
-
 	if err != nil {
-		fmt.Printf("Fail to unmarshal roles: %v", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("Failed to unmarshal SAML response")
 	}
 
 	for _, attr := range sResponse.Assertion.AttributeStatement.Attributes {
@@ -90,12 +93,14 @@ func askUserForRoleAndDuration(
 	noPrompt bool,
 	defaultRoleArn string,
 	defaultDurationHours string) (r role, durationHours int32) {
-	durationHoursP, _ := strconv.ParseInt(defaultDurationHours, 10, 32)
+	durationHoursP, err := strconv.ParseInt(defaultDurationHours, 10, 32)
+	if err != nil && defaultDurationHours != "" {
+		log.Warn().Err(err).Str("value", defaultDurationHours).Msg("Invalid default duration hours, using 0")
+	}
 	durationHours = int32(durationHoursP)
 
 	if len(roles) == 0 {
-		fmt.Println("No roles found in SAML response.")
-		os.Exit(1)
+		log.Fatal().Msg("No roles found in SAML response")
 	} else if len(roles) == 1 {
 		r = roles[0]
 	} else {
@@ -145,8 +150,12 @@ func askUserForRoleAndDuration(
 			return nil
 		}))
 
-		durationHoursP, _ = strconv.ParseInt(hq, 10, 32)
-		durationHours = int32(durationHoursP)
+		parsed, err := strconv.ParseInt(hq, 10, 32)
+		if err != nil {
+			log.Warn().Err(err).Str("value", hq).Msg("Invalid duration hours input, using default")
+		} else {
+			durationHours = int32(parsed)
+		}
 	}
 	return
 }
@@ -169,8 +178,7 @@ func assumeRole(
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		fmt.Printf("Fail to get AWS config: %v", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("Failed to load AWS config")
 	}
 
 	if region != nil {
@@ -180,10 +188,8 @@ func assumeRole(
 	stsClient := sts.NewFromConfig(cfg)
 
 	stsResult, err := stsClient.AssumeRoleWithSAML(context.Background(), &stsInput)
-
 	if err != nil {
-		fmt.Printf("Fail to assume role: %v", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Str("role", role.roleArn).Msg("Failed to assume role")
 	}
 
 	setProfileCredentials(profileName,

@@ -2,8 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -65,8 +63,7 @@ func configureProfile(profileName string) {
 
 	err := survey.Ask(qs, &profile)
 	if err != nil {
-		fmt.Printf("Fail to get profile answers: %v", err)
-		os.Exit(1)
+		log.Fatal().Err(err).Msg("Failed to get profile configuration answers")
 	}
 
 	setProfileConfig(profileName, profile)
