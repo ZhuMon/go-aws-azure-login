@@ -177,6 +177,49 @@ func loginAll(opts LoginOptions) {
 	}
 }
 
+// loginMultiple logs in to a specific list of profiles
+func loginMultiple(profileNames []string, opts LoginOptions) {
+	// Filter profiles that need refresh
+	var profilesToLogin []string
+	for _, profileName := range profileNames {
+		profile := getProfileConfig(profileName)
+		// Skip profiles without azure_tenant_id configured
+		if profile.AzureTenantID == "" {
+			log.Warn().Str("profile", profileName).Msg("Skipping profile without azure_tenant_id")
+			continue
+		}
+		if !opts.ForceRefresh && !isProfileAboutToExpire(profileName) {
+			log.Debug().Str("profile", profileName).Msg("Skipping profile - credentials still valid")
+			continue
+		}
+		profilesToLogin = append(profilesToLogin, profileName)
+	}
+
+	if len(profilesToLogin) == 0 {
+		log.Info().Msg("No profiles need refresh")
+		return
+	}
+
+	// Create browser once and reuse for all profiles
+	browser, cleanup := createBrowser(opts.Ctx, opts.ShowBrowser, opts.DisableLeakless, opts.UseSystemBrowser)
+	defer cleanup()
+
+	if browser == nil {
+		return
+	}
+
+	for i, profileName := range profilesToLogin {
+		// Check if context was cancelled (e.g., Ctrl+C)
+		select {
+		case <-opts.Ctx.Done():
+			return
+		default:
+		}
+		log.Info().Int("current", i+1).Int("total", len(profilesToLogin)).Str("profile", profileName).Msg("Logging in profile")
+		loginWithBrowser(browser, profileName, opts)
+	}
+}
+
 func loginWithBrowser(browser *rod.Browser, profileName string, opts LoginOptions) {
 	profile := loadProfile(profileName)
 

@@ -71,7 +71,7 @@ var (
 func init() {
 	const (
 		profileDefaultValue          = ""
-		profileUsage                 = "The name of the profile to log in with (or configure)"
+		profileUsage                 = "The name of the profile(s) to log in with (or configure). Use comma-separated values for multiple profiles (e.g., -p dev,staging,prod)"
 		allProfilesDefaultValue      = false
 		allProfilesUsage             = "Run for all configured profiles"
 		forceRefreshDefaultValue     = false
@@ -119,17 +119,23 @@ func init() {
 func main() {
 	defer appCancel()
 
-	var profileName string
 	isGui := mode == "gui"
 	isDebug := mode == "debug"
 	showBrowser := mode == "gui" || mode == "debug"
 
+	// Parse profile(s) - support comma-separated values
+	var profileNames []string
 	if profile != "" {
-		profileName = profile
+		for _, p := range strings.Split(profile, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				profileNames = append(profileNames, p)
+			}
+		}
 	} else if osAWSProfile := os.Getenv("AWS_PROFILE"); osAWSProfile != "" {
-		profileName = osAWSProfile
+		profileNames = []string{osAWSProfile}
 	} else {
-		profileName = "default"
+		profileNames = []string{"default"}
 	}
 
 	opts := LoginOptions{
@@ -146,7 +152,11 @@ func main() {
 	}
 
 	if configure {
-		configureProfile(profileName)
+		// Configure only supports single profile
+		if len(profileNames) > 1 {
+			log.Fatal().Msg("Configure mode only supports a single profile")
+		}
+		configureProfile(profileNames[0])
 	} else {
 		startStdinMonitor()
 		log.Info().Msg("Press 'q' + Enter to quit")
@@ -154,8 +164,10 @@ func main() {
 		go func() {
 			if allProfiles {
 				loginAll(opts)
+			} else if len(profileNames) > 1 {
+				loginMultiple(profileNames, opts)
 			} else {
-				login(profileName, opts)
+				login(profileNames[0], opts)
 			}
 			close(done)
 		}()
