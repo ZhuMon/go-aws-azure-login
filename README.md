@@ -1,134 +1,239 @@
 # go-aws-azure-login
 
-If your organization uses [Azure Active Directory](https://azure.microsoft.com) to provide SSO login to the AWS console, then there is no easy way to log in on the command line or to use the [AWS CLI](https://aws.amazon.com/cli/). This tool fixes that. It lets you use the normal Azure AD login (including MFA) from a command line to create a federated AWS session and places the temporary credentials in the proper place for the AWS CLI and SDKs.
+A command-line tool for logging into AWS using Azure Active Directory SSO authentication.
+
+> **Note**: This is a fork of [luneo7/go-aws-azure-login](https://github.com/luneo7/go-aws-azure-login).
+
+## Overview
+
+If your organization uses [Azure Active Directory](https://azure.microsoft.com) for SSO login to the AWS console, this tool lets you authenticate from the command line. It handles the full Azure AD login flow (including MFA) and stores temporary AWS credentials for use with the AWS CLI and SDKs.
 
 ## Installation
 
-Installation can be done in any of the following platform - Windows, Linux, Docker, Snap
+Download the binary from the [releases page](https://github.com/ZhuMon/go-aws-azure-login/releases), or build from source:
 
-    go get https://github.com/luneo7/go-aws-azure-login
+```bash
+go install github.com/ZhuMon/go-aws-azure-login@latest
+```
 
-Or you can download the binary from the release page
+## Quick Start
+
+1. **Configure a profile:**
+   ```bash
+   go-aws-azure-login -configure
+   ```
+
+2. **Log in:**
+   ```bash
+   go-aws-azure-login
+   ```
+
+3. **Use AWS CLI as usual:**
+   ```bash
+   aws s3 ls
+   ```
+
+## Configuration
+
+### Basic Setup
+
+Run the configuration wizard:
+
+```bash
+# Configure the default profile
+go-aws-azure-login -configure
+
+# Configure a named profile
+go-aws-azure-login -configure -profile myprofile
+```
+
+You'll need:
+- **Azure Tenant ID** - Your organization's Azure AD tenant identifier
+- **App ID URI** - The application ID URI for the AWS app in Azure AD
+
+See [Getting Your Tenant ID and App ID URI](#getting-your-tenant-id-and-app-id-uri) for help finding these values.
+
+### Environment Variables
+
+You can set these environment variables to skip prompts:
+
+| Variable | Description |
+|----------|-------------|
+| `AZURE_TENANT_ID` | Azure AD tenant ID |
+| `AZURE_APP_ID_URI` | Application ID URI |
+| `AZURE_DEFAULT_USERNAME` | Login username |
+| `AZURE_DEFAULT_PASSWORD` | Login password |
+| `AZURE_DEFAULT_ROLE_ARN` | AWS role ARN to assume |
+| `AZURE_DEFAULT_DURATION_HOURS` | Session duration in hours |
+
+For Okta federated logins (untested):
+
+| Variable | Description |
+|----------|-------------|
+| `OKTA_DEFAULT_USERNAME` | Okta username (if different from Azure) |
+| `OKTA_DEFAULT_PASSWORD` | Okta password (if different from Azure) |
+
+> **Note**: Okta federation support is **untested** in this fork.
+
+**Security tip**: Use `HISTCONTROL=ignoreboth` and prefix commands with a space to avoid storing passwords in shell history:
+
+```bash
+HISTCONTROL=ignoreboth
+ export AZURE_DEFAULT_PASSWORD=mypassword  # Note the leading space
+go-aws-azure-login -no-prompt
+```
+
+### Stay Logged In
+
+During configuration, you can enable session persistence:
+
+```
+? Stay logged in: skip authentication while refreshing aws credentials (true|false)
+```
+
+When enabled, subsequent logins reuse session cookies to skip the username/password prompts:
+
+```bash
+go-aws-azure-login -no-prompt
+```
+
+> **Important**: This feature will **not work** if your organization's IT policy requires MFA verification on every login. In that case, you'll still need to complete MFA each time regardless of this setting.
 
 ## Usage
 
-### Configuration
+### Basic Commands
 
-#### AWS
+```bash
+# Login with default profile
+go-aws-azure-login
 
-To configure the aws-azure-login client run:
+# Login with a named profile
+go-aws-azure-login -profile myprofile
 
-    go-aws-azure-login -configure
+# Use AWS_PROFILE environment variable
+AWS_PROFILE=myprofile go-aws-azure-login
 
-You'll need your [Azure Tenant ID and the App ID URI](#getting-your-tenant-id-and-app-id-uri). To configure a named profile, use the -profile flag.
+# Skip prompts (uses saved/environment credentials)
+go-aws-azure-login -no-prompt
 
-    go-aws-azure-login -configure -profile foo
+# Login all configured profiles
+go-aws-azure-login -all-profiles
 
-##### GovCloud Support
+# Force credential refresh (even if not expired)
+go-aws-azure-login -force-refresh
+```
 
-To use aws-azure-login with AWS GovCloud, set the `region` profile property in your ~/.aws/config to the one of the GovCloud regions:
+### Display Modes
 
-- us-gov-west-1
-- us-gov-east-1
+```bash
+# CLI mode (default) - headless browser, prompts in terminal
+go-aws-azure-login -mode cli
 
-##### China Region Support
+# GUI mode - visible browser window for login
+go-aws-azure-login -mode gui
 
-To use aws-azure-login with AWS China Cloud, set the `region` profile property in your ~/.aws/config to the China region:
+# Debug mode - visible browser with CLI prompts (for troubleshooting)
+go-aws-azure-login -mode debug
+```
 
-- cn-north-1
+### All Options
 
-#### Staying logged in, skip username/password for future logins
-
-During the configuration you can decide to stay logged in:
-
-    ? Stay logged in: skip authentication while refreshing aws credentials (true|false) (false)
-
-If you set this configuration to true, the usual authentication with username/password/MFA is skipped as it's using session cookies to remember your identity. This enables you to use `-no-prompt` without the need to store your password anywhere, it's an alternative for using environment variables as described below.
-As soon as you went through the full login procedure once, you can just use:
-
-    aws-azure-login -no-prompt
-
-or
-
-    aws-azure-login -profile foo -no-prompt
-
-to refresh your aws credentials.
-
-#### Okta Support
-
-If you use Azure AD delating to Okta, you can have a different user name and password for Okta, if you do have you can set `okta_default_username` and `okta_default_password` in the config file or in the env variable to do login with Okta without any prompt, otherwise it will prompt the username + password.
-
-#### Environment Variables
-
-You can optionally store your responses as environment variables:
-
-- `AZURE_TENANT_ID`
-- `AZURE_APP_ID_URI`
-- `AZURE_DEFAULT_USERNAME`
-- `AZURE_DEFAULT_PASSWORD`
-- `AZURE_DEFAULT_ROLE_ARN`
-- `AZURE_DEFAULT_DURATION_HOURS`
-- `OKTA_DEFAULT_USERNAME`
-- `OKTA_DEFAULT_PASSWORD`
-
-To avoid having to `<Enter>` through the prompts after setting these environment variables, use the `--no-prompt` option when running the command.
-
-    aws-azure-login --no-prompt
-
-Use the `HISTCONTROL` environment variable to avoid storing the password in your bash history (notice the space at the beginning):
-
-    $ HISTCONTROL=ignoreboth
-    $  export AZURE_DEFAULT_PASSWORD=mypassword
-    $ go-aws-azure-login
-
-### Logging In
-
-Once aws-azure-login is configured, you can log in. For the default profile, just run:
-
-    go-aws-azure-login
-
-You will be prompted for your username and password. If MFA is required you'll also be prompted for a verification code or mobile device approval. To log in with a named profile:
-
-    go-aws-azure-login -profile foo
-
-Alternatively, you can set the `AWS_PROFILE` environmental variable to the name of the profile just like the AWS CLI.
-
-Once you log in you can use the AWS CLI or SDKs as usual!
-
+| Flag | Short | Description |
+|------|-------|-------------|
+| `-profile` | `-p` | Profile name to use |
+| `-all-profiles` | `-a` | Login all configured profiles |
+| `-force-refresh` | `-f` | Force credential refresh |
+| `-configure` | `-c` | Run configuration wizard |
+| `-mode` | `-m` | Display mode: `cli`, `gui`, or `debug` |
+| `-no-prompt` | | Skip interactive prompts |
+| `-no-verify-ssl` | | Disable SSL verification for AWS |
+| `-disable-leakless` | | Disable leakless mode (troubleshooting) |
+| `-fastpass` | | Use Okta FastPass verification (untested) |
+| `-system-browser` | | Use system browser instead of embedded |
 
 ## Automation
 
-### Renew credentials for all configured profiles
+### Refresh All Profiles
 
-You can renew credentials for all configured profiles in one run. This is especially useful, if the maximum session length on AWS side is configured to a low value due to security constraints. Just run:
+Useful for keeping credentials fresh with a cron job:
 
-    go-aws-azure-login -all-profiles
+```bash
+# Refresh all profiles without prompts
+go-aws-azure-login -all-profiles -no-prompt
+```
 
-If you configure all profiles to stay logged in, you can easily skip the prompts:
+Credentials are only refreshed if they expire within 11 minutes, so running this frequently is safe.
 
-    go-aws-azure-login -all-profiles -no-prompt
+Example cron entry (every 5 minutes):
 
-This will allow you to automate the credentials refresh procedure, eg. by running a cronjob every 5 minutes.
-To skip unnecessary calls, the credentials are only getting refreshed if the time to expire is lower than 11 minutes.
+```cron
+*/5 * * * * /path/to/go-aws-azure-login -all-profiles -no-prompt
+```
+
+> **Note**: This only works reliably if your organization allows session persistence. If MFA is required each login, automation is not possible.
 
 ## Getting Your Tenant ID and App ID URI
 
-Your Azure AD system admin should be able to provide you with your Tenant ID and App ID URI. If you can't get it from them, you can scrape it from a login page from the myapps.microsoft.com page.
+Contact your Azure AD administrator for these values. If unavailable, you can extract them:
 
-1. Load the myapps.microsoft.com page.
-2. Click the chicklet for the login you want.
-3. In the window the pops open quickly copy the login.microsoftonline.com URL. (If you miss it just try again. You can also open the developer console with nagivation preservation to capture the URL.)
-4. The GUID right after login.microsoftonline.com/ is the tenant ID.
-5. Copy the SAMLRequest URL param.
-6. Paste it into a URL decoder ([like this one](https://www.samltool.com/url.php)) and decode.
-7. Paste the decoded output into the a SAML deflated and encoded XML decoder ([like this one](https://www.samltool.com/decode.php)).
-8. In the decoded XML output the value of the Issuer tag is the App ID URI.
+1. Go to [myapps.microsoft.com](https://myapps.microsoft.com)
+2. Click the AWS app tile
+3. Quickly copy the URL from the popup (format: `login.microsoftonline.com/<tenant-id>/...`)
+4. The GUID after `login.microsoftonline.com/` is your **Tenant ID**
+5. Copy the `SAMLRequest` URL parameter
+6. Decode the URL encoding using a [URL decoder](https://www.samltool.com/url.php)
+7. Decode the SAML using a [SAML decoder](https://www.samltool.com/decode.php)
+8. The `Issuer` value in the decoded XML is your **App ID URI**
+
+## Regional Support
+
+> **Note**: GovCloud and China region support is **untested** in this fork.
+
+To use with AWS GovCloud or China regions, set the `region` in your `~/.aws/config`:
+
+**GovCloud:**
+```ini
+[profile govcloud]
+region = us-gov-west-1
+# or us-gov-east-1
+```
+
+**China:**
+```ini
+[profile china]
+region = cn-north-1
+```
 
 ## How It Works
 
-The Azure login page uses JavaScript, which requires a real web browser. To automate this from a command line, aws-azure-login uses [Rod](https://github.com/go-rod/rod), which automates a real Chromium browser. It loads the Azure login page behind the scenes, populates your username and password (and MFA token), parses the SAML assertion, uses the [AWS STS AssumeRoleWithSAML API](http://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithSAML.html) to get temporary credentials, and saves these in the CLI credentials file.
+1. **Browser automation**: Uses [Rod](https://github.com/go-rod/rod) to automate a Chromium browser
+2. **Azure AD login**: Navigates the Azure login flow, handling credentials and MFA
+3. **SAML parsing**: Extracts the SAML assertion from the Azure response
+4. **AWS STS**: Calls [AssumeRoleWithSAML](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithSAML.html) to get temporary credentials
+5. **Credential storage**: Saves credentials to `~/.aws/credentials`
 
+## Troubleshooting
 
-## Support for Other Authentication Providers
+### Browser issues
 
-Obviously, this tool only supports Azure AD as an identity provider. However, there is a lot of similarity with how other logins with other providers would work (especially if they are SAML providers). If you are interested in building support for a different provider let me know. It would be great to build a more generic AWS CLI login tool with plugins for the various providers.
+Try these flags:
+- `-mode debug` - See what's happening in the browser
+- `-disable-leakless` - If you see zombie browser processes
+- `-system-browser` - Use your installed browser instead of embedded
+
+### MFA not working
+
+Use `-mode gui` to complete MFA in a visible browser window.
+
+### SSL errors
+
+Use `-no-verify-ssl` if you're behind a corporate proxy with SSL inspection.
+
+## License
+
+See [LICENSE](LICENSE) file.
+
+## Acknowledgments
+
+- Original project: [luneo7/go-aws-azure-login](https://github.com/luneo7/go-aws-azure-login)
+- Browser automation: [go-rod/rod](https://github.com/go-rod/rod)
