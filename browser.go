@@ -122,7 +122,10 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 
 	page := browser.MustPage()
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
-	page.MustNavigate(urlString)
+	err := page.Navigate(urlString)
+	if err != nil {
+		log.Fatal().Err(err).Str("url", urlString).Msg("Failed to navigate to login URL")
+	}
 	wait()
 
 	handlerCtx := &HandlerContext{
@@ -148,7 +151,10 @@ func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bo
 
 	page := browser.MustPage()
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
-	page.MustNavigate(urlString)
+	err := page.Navigate(urlString)
+	if err != nil {
+		log.Fatal().Err(err).Str("url", urlString).Msg("Failed to navigate to login URL")
+	}
 	wait()
 
 	handlerCtx := &HandlerContext{

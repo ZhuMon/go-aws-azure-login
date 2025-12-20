@@ -4,7 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+
+	"github.com/rs/zerolog"
 )
+
+var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
 var (
 	profile          string
