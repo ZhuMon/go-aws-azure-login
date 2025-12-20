@@ -563,6 +563,7 @@ func login(
 	awsNoVerifySsl bool,
 	noPrompt bool,
 	isGui bool,
+	showBrowser bool,
 	disableLeakless bool,
 	fastPass bool,
 	useSystemBrowser bool) {
@@ -581,7 +582,7 @@ func login(
 
 	loginUrl := createLoginUrl(profile.AzureAppIDUri, profile.AzureTenantID, assertionConsumerServiceURL)
 
-	saml := performLogin(loginUrl, noPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, isGui, disableLeakless, fastPass, useSystemBrowser)
+	saml := performLogin(loginUrl, noPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, isGui, showBrowser, disableLeakless, fastPass, useSystemBrowser)
 
 	roles := parseRolesFromSamlResponse(saml)
 
@@ -590,7 +591,7 @@ func login(
 	assumeRole(profileName, saml, rl, durationHours, awsNoVerifySsl, profile.Region)
 }
 
-func loginAll(forceRefresh bool, awsNoVerifySsl bool, noPrompt bool, isGui bool, disableLeakless bool, fastPass bool, useSystemBrowser bool) {
+func loginAll(forceRefresh bool, awsNoVerifySsl bool, noPrompt bool, isGui bool, showBrowser bool, disableLeakless bool, fastPass bool, useSystemBrowser bool) {
 	allProfiles := getAllProfileNames()
 
 	for _, profileName := range allProfiles {
@@ -598,7 +599,7 @@ func loginAll(forceRefresh bool, awsNoVerifySsl bool, noPrompt bool, isGui bool,
 			continue
 		}
 
-		login(profileName, awsNoVerifySsl, noPrompt, isGui, disableLeakless, fastPass, useSystemBrowser)
+		login(profileName, awsNoVerifySsl, noPrompt, isGui, showBrowser, disableLeakless, fastPass, useSystemBrowser)
 	}
 }
 
@@ -625,8 +626,8 @@ func createLoginUrl(appIDUri string, tenantID string, assertionConsumerServiceUR
 	return fmt.Sprintf("https://login.microsoftonline.com/%s/saml2?SAMLRequest=%s", tenantID, url.QueryEscape(samlBase64))
 }
 
-func performLogin(urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
-	l := launcher.New().Headless(!isGui)
+func performLogin(urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
+	l := launcher.New().Headless(!showBrowser)
 
 	if useSystemBrowser {
 		if path, exists := launcher.LookPath(); exists {

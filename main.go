@@ -70,6 +70,7 @@ func init() {
 func main() {
 	var profileName string
 	isGui := mode == "gui"
+	showBrowser := mode == "gui" || mode == "debug"
 
 	if profile != "" {
 		profileName = profile
@@ -83,10 +84,9 @@ func main() {
 		configureProfile(profileName)
 	} else {
 		if allProfiles {
-			loginAll(forceRefresh, noVerifySSL, noPrompt, isGui, disableLeakless, fastPass, useSystemBrowser)
+			loginAll(forceRefresh, noVerifySSL, noPrompt, isGui, showBrowser, disableLeakless, fastPass, useSystemBrowser)
 		} else {
-			login(profileName, noVerifySSL, noPrompt, isGui, disableLeakless, fastPass, useSystemBrowser)
+			login(profileName, noVerifySSL, noPrompt, isGui, showBrowser, disableLeakless, fastPass, useSystemBrowser)
 		}
 	}
-
 }
