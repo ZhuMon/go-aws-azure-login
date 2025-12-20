@@ -99,6 +99,8 @@ func login(profileName string, opts LoginOptions) {
 		return
 	}
 
+	log.Info().Str("profile", profileName).Msg("Starting login")
+
 	profile := loadProfile(profileName)
 
 	assertionConsumerServiceURL := AWS_SAML_ENDPOINT
@@ -115,7 +117,11 @@ func login(profileName string, opts LoginOptions) {
 
 	saml := performLogin(loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.ShowBrowser, opts.DisableLeakless, opts.FastPass, opts.UseSystemBrowser)
 
+	log.Info().Msg("SAML response received, parsing roles")
+
 	roles := parseRolesFromSamlResponse(saml)
+
+	log.Info().Int("count", len(roles)).Msg("Roles found")
 
 	rl, durationHours := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
 

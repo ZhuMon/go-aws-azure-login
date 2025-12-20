@@ -39,6 +39,11 @@ var states = []state{
 		name:     "username input",
 		selector: `input[name="loginfmt"]:not(.moveOffScreen)`,
 		handler: func(pg *rod.Page, el *rod.Element, ctx *HandlerContext) {
+			// Skip if already prompted for this state
+			if ctx.PromptedStates["azure_username"] {
+				return
+			}
+
 			username := ctx.DefaultUserName
 
 			if !ctx.NoPrompt && !ctx.IsGui {
@@ -48,6 +53,8 @@ var states = []state{
 				}
 				survey.AskOne(prompt, &username, survey.WithValidator(survey.Required))
 			}
+
+			ctx.PromptedStates["azure_username"] = true
 
 			if len(username) > 0 {
 				// Check if element is still visible before interacting
@@ -118,6 +125,11 @@ var states = []state{
 		name:     "password input",
 		selector: `input[name="Password"]:not(.moveOffScreen),input[name="passwd"]:not(.moveOffScreen)`,
 		handler: func(pg *rod.Page, el *rod.Element, ctx *HandlerContext) {
+			// Skip if already prompted for this state
+			if ctx.PromptedStates["azure_password"] {
+				return
+			}
+
 			alert, err := pg.Sleeper(rod.NotFoundSleeper).Element(".alert-error")
 
 			if alert != nil && err == nil {
@@ -134,6 +146,8 @@ var states = []state{
 				}
 				survey.AskOne(prompt, &password, survey.WithValidator(survey.Required))
 			}
+
+			ctx.PromptedStates["azure_password"] = true
 
 			if len(password) > 0 {
 				el.MustWaitVisible()
@@ -152,6 +166,11 @@ var states = []state{
 		name:     "OKTA username input",
 		selector: `form:not(.o-form-saving) > div span.okta-form-input-field input[name="identifier"]:not([disabled])`,
 		handler: func(pg *rod.Page, el *rod.Element, ctx *HandlerContext) {
+			// Skip if already prompted for this state
+			if ctx.PromptedStates["okta_username"] {
+				return
+			}
+
 			errorSelector := `div.o-form-error-container`
 			errorContainer, err := pg.Sleeper(rod.NotFoundSleeper).Element(errorSelector)
 
@@ -190,6 +209,8 @@ var states = []state{
 				}
 				survey.AskOne(promptUsername, &username, survey.WithValidator(survey.Required))
 			}
+
+			ctx.PromptedStates["okta_username"] = true
 
 			if len(username) > 0 {
 
@@ -266,6 +287,11 @@ var states = []state{
 		name:     "OKTA password input",
 		selector: `form:not(.o-form-saving) > div span.okta-form-input-field input[type="password"]:not([disabled])`,
 		handler: func(pg *rod.Page, el *rod.Element, ctx *HandlerContext) {
+			// Skip if already prompted for this state
+			if ctx.PromptedStates["okta_password"] {
+				return
+			}
+
 			errorSelector := `div.o-form-error-container`
 			errorContainer, err := pg.Sleeper(rod.NotFoundSleeper).Element(errorSelector)
 
@@ -304,6 +330,8 @@ var states = []state{
 				}
 				survey.AskOne(promptPasswd, &password, survey.WithValidator(survey.Required))
 			}
+
+			ctx.PromptedStates["okta_password"] = true
 
 			if len(password) > 0 {
 

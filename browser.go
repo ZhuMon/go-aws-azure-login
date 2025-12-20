@@ -156,6 +156,7 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 		DefaultOktaPassword: defaultOktaPassword,
 		NoPrompt:            noPrompt,
 		IsGui:               isGui,
+		PromptedStates:      make(map[string]bool),
 	}
 
 	return runStateLoop(page, samlResponseChan, handlerCtx, fastpass)
@@ -192,6 +193,7 @@ func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bo
 		DefaultOktaPassword: defaultOktaPassword,
 		NoPrompt:            noPrompt,
 		IsGui:               isGui,
+		PromptedStates:      make(map[string]bool),
 	}
 
 	samlResponse := runStateLoop(page, samlResponseChan, handlerCtx, fastpass)

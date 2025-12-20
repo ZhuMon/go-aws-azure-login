@@ -62,4 +62,5 @@ type HandlerContext struct {
 	DefaultOktaPassword *string
 	NoPrompt            bool
 	IsGui               bool
+	PromptedStates      map[string]bool // Track which states have already prompted
 }
