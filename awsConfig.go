@@ -123,7 +123,7 @@ func getAllProfileNames() []string {
 
 func getSectionName(profileName string) string {
 	sectionName := "default"
-	if profileName != "default" {
+	if strings.ToLower(profileName) != "default" {
 		sectionName = fmt.Sprintf("profile %s", profileName)
 	}
 	return sectionName

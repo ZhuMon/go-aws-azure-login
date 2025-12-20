@@ -119,9 +119,15 @@ func login(profileName string, opts LoginOptions) {
 func loginAll(opts LoginOptions) {
 	allProfiles := getAllProfileNames()
 
-	// Filter profiles that need refresh
+	// Filter profiles that need refresh and are properly configured
 	var profilesToLogin []string
 	for _, profileName := range allProfiles {
+		profile := getProfileConfig(profileName)
+		// Skip profiles without azure_tenant_id configured
+		if profile.AzureTenantID == "" {
+			log.Debug().Str("profile", profileName).Msg("Skipping profile without azure_tenant_id")
+			continue
+		}
 		if !opts.ForceRefresh && !isProfileAboutToExpire(profileName) {
 			continue
 		}
