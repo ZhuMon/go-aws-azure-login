@@ -142,6 +142,17 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create page")
 	}
+
+	// Set viewport to match window size so content is properly centered
+	err = page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
+		Width:             WIDTH,
+		Height:            HEIGHT,
+		DeviceScaleFactor: 1,
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to set viewport")
+	}
+
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 	err = page.Navigate(urlString)
 	if err != nil {
@@ -179,6 +190,17 @@ func performLoginWithBrowser(browser *rod.Browser, urlString string, noPrompt bo
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create page")
 	}
+
+	// Set viewport to match window size so content is properly centered
+	err = page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
+		Width:             WIDTH,
+		Height:            HEIGHT,
+		DeviceScaleFactor: 1,
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to set viewport")
+	}
+
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 	err = page.Navigate(urlString)
 	if err != nil {
