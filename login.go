@@ -78,6 +78,29 @@ type role struct {
 
 var states = []state{
 	{
+		name:     "pick an account",
+		selector: `div.table[role="button"][data-test-id]`,
+		handler: func(pg *rod.Page, el *rod.Element, noPrompt bool, defaultUserName string, _ *string, _ *string, _ *string, isGui bool) {
+			time.Sleep(time.Millisecond * 300)
+			// Click the account button directly using rod
+			if len(defaultUserName) > 0 {
+				// Try exact match first
+				exactSelector := fmt.Sprintf(`div.table[role="button"][data-test-id="%s"]`, defaultUserName)
+				btn, err := pg.Timeout(2 * time.Second).Element(exactSelector)
+				if err == nil && btn != nil {
+					btn.Click(proto.InputMouseButtonLeft, 1)
+					time.Sleep(time.Millisecond * 500)
+					return
+				}
+			}
+			// Fallback: click the found element
+			if el != nil {
+				el.Click(proto.InputMouseButtonLeft, 1)
+				time.Sleep(time.Millisecond * 500)
+			}
+		},
+	},
+	{
 		name:     "username input",
 		selector: `input[name="loginfmt"]:not(.moveOffScreen)`,
 		handler: func(pg *rod.Page, el *rod.Element, noPrompt bool, defaultUserName string, _ *string, _ *string, _ *string, isGui bool) {
