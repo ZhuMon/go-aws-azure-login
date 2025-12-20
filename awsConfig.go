@@ -80,13 +80,13 @@ func isProfileAboutToExpire(profileName string) bool {
 
 	section := config.Section(profileName)
 
-	aws_expiration := section.Key("aws_expiration").Value()
+	awsExpiration := section.Key("aws_expiration").Value()
 
 	expirationDate := time.Now()
 
-	if aws_expiration != "" {
+	if awsExpiration != "" {
 		var err error
-		expirationDate, err = time.Parse(timeFormat, aws_expiration)
+		expirationDate, err = time.Parse(timeFormat, awsExpiration)
 		if err != nil {
 			fmt.Printf("Invalid profile expiration: %v", err)
 			os.Exit(1)
@@ -160,7 +160,7 @@ func setSectionValues(section *ini.Section, values interface{}) {
 func load(pathType PathType) *ini.File {
 	p, ok := paths[pathType]
 	if !ok {
-		fmt.Printf("Unkown config path type: %v", pathType)
+		fmt.Printf("Unknown config path type: %v", pathType)
 		os.Exit(1)
 	}
 
@@ -176,7 +176,7 @@ func load(pathType PathType) *ini.File {
 func save(pathType PathType, data *ini.File) {
 	p, ok := paths[pathType]
 	if !ok {
-		fmt.Printf("Unkown config path type: %v", pathType)
+		fmt.Printf("Unknown config path type: %v", pathType)
 		os.Exit(1)
 	}
 
