@@ -589,8 +589,8 @@ func createLoginUrl(appIDUri string, tenantID string, assertionConsumerServiceUR
 	return fmt.Sprintf("https://login.microsoftonline.com/%s/saml2?SAMLRequest=%s", tenantID, url.QueryEscape(samlBase64))
 }
 
-func performLogin(urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
-	l := launcher.New().Headless(!showBrowser)
+func createBrowser(showBrowser bool, disableLeakless bool, useSystemBrowser bool) (*rod.Browser, func()) {
+	l := launcher.New().Headless(!showBrowser).UserDataDir(paths[CHROMIUM])
 
 	if useSystemBrowser {
 		if path, exists := launcher.LookPath(); exists {
@@ -602,23 +602,23 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 	}
 
 	l.Leakless(!disableLeakless)
+	l.Set("window-size", fmt.Sprintf("%d,%d", WIDTH, HEIGHT))
 
 	u := l.MustLaunch()
 	browser := rod.New().ControlURL(u).MustConnect()
 
-	defer browser.MustClose()
+	cleanup := func() {
+		browser.MustClose()
+	}
 
-	router := browser.HijackRequests()
-	defer router.MustStop()
+	return browser, cleanup
+}
 
-	samlResponseChan := make(chan string, 1)
-	samlResponse := ""
-
+func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- string) {
 	router.MustAdd("https://*amazon*", func(ctx *rod.Hijack) {
 		reqURL := ctx.Request.URL().String()
 
 		if reqURL == AWS_SAML_ENDPOINT || reqURL == AWS_GOV_SAML_ENDPOINT || reqURL == AWS_CN_SAML_ENDPOINT {
-
 			val, err := url.ParseQuery(ctx.Request.Body())
 
 			if err != nil {
@@ -648,24 +648,12 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 		}
 		ctx.ContinueRequest(&proto.FetchContinueRequest{})
 	})
+}
 
-	go router.Run()
+func runStateLoop(page *rod.Page, samlResponseChan <-chan string, handlerCtx *HandlerContext, fastpass bool) string {
+	samlResponse := ""
 
-	page := browser.MustPage()
-	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
-	page.MustNavigate(urlString)
-	wait()
-
-	handlerCtx := &HandlerContext{
-		DefaultUserName:     defaultUserName,
-		DefaultUserPassword: defaultUserPassword,
-		DefaultOktaUserName: defaultOktaUserName,
-		DefaultOktaPassword: defaultOktaPassword,
-		NoPrompt:            noPrompt,
-		IsGui:               isGui,
-	}
-
-	if isGui && !noPrompt {
+	if handlerCtx.IsGui && !handlerCtx.NoPrompt {
 		r, ok := <-samlResponseChan
 		if ok {
 			samlResponse = r
@@ -697,6 +685,35 @@ func performLogin(urlString string, noPrompt bool, defaultUserName string, defau
 	}
 
 	return samlResponse
+}
+
+func performLogin(urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
+	browser, cleanup := createBrowser(showBrowser, disableLeakless, useSystemBrowser)
+	defer cleanup()
+
+	router := browser.HijackRequests()
+	defer router.MustStop()
+
+	samlResponseChan := make(chan string, 1)
+	setupRequestHijacker(router, samlResponseChan)
+
+	go router.Run()
+
+	page := browser.MustPage()
+	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
+	page.MustNavigate(urlString)
+	wait()
+
+	handlerCtx := &HandlerContext{
+		DefaultUserName:     defaultUserName,
+		DefaultUserPassword: defaultUserPassword,
+		DefaultOktaUserName: defaultOktaUserName,
+		DefaultOktaPassword: defaultOktaPassword,
+		NoPrompt:            noPrompt,
+		IsGui:               isGui,
+	}
+
+	return runStateLoop(page, samlResponseChan, handlerCtx, fastpass)
 }
 
 func parseRolesFromSamlResponse(assertion string) []role {
