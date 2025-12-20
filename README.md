@@ -132,15 +132,17 @@ go-aws-azure-login -force-refresh
 ### Display Modes
 
 ```bash
-# CLI mode (default) - headless browser, prompts in terminal
-go-aws-azure-login -mode cli
-
-# GUI mode - visible browser window for login
+# GUI mode (default) - visible browser window for login
 go-aws-azure-login -mode gui
+
+# CLI mode - headless browser, prompts in terminal
+go-aws-azure-login -mode cli
 
 # Debug mode - visible browser with CLI prompts (for troubleshooting)
 go-aws-azure-login -mode debug
 ```
+
+> **MFA Compatibility**: If your MFA requires viewing a number on screen (e.g., Microsoft Authenticator number matching), **do not use CLI mode**. The headless browser hides the screen, making it impossible to see the verification code. Use GUI mode instead.
 
 ### All Options
 
@@ -150,8 +152,8 @@ go-aws-azure-login -mode debug
 | `-all-profiles` | `-a` | Login all configured profiles |
 | `-force-refresh` | `-f` | Force credential refresh |
 | `-configure` | `-c` | Run configuration wizard |
-| `-mode` | `-m` | Display mode: `cli`, `gui`, or `debug` |
-| `-no-prompt` | | Skip interactive prompts |
+| `-mode` | `-m` | Display mode: `gui` (default), `cli`, or `debug` |
+| `-no-prompt` | | Skip interactive prompts (default: true) |
 | `-no-verify-ssl` | | Disable SSL verification for AWS |
 | `-disable-leakless` | | Disable leakless mode (troubleshooting) |
 | `-fastpass` | | Use Okta FastPass verification (untested) |

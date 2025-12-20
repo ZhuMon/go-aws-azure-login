@@ -33,11 +33,11 @@ func init() {
 		forceRefreshUsage            = "Force a credential refresh, even if they are still valid"
 		configureDefaultValue        = false
 		configureUsage               = "Configure the profile"
-		modeDefaultValue             = "cli"
-		modeUsage                    = "'cli' to hide the login page and perform the login through the CLI (default behavior), 'gui' to perform the login through the Azure GUI (more reliable but only works on GUI operating system), 'debug' to show the login page but perform the login through the CLI (useful to debug issues with the CLI login)"
+		modeDefaultValue             = "gui"
+		modeUsage                    = "'gui' to perform the login through the Azure GUI (default, required for MFA with number matching), 'cli' to hide the login page and perform the login through the CLI (only works with push-based MFA), 'debug' to show the login page but perform the login through the CLI (useful to debug issues with the CLI login)"
 		noVerifySSLDefaultValue      = false
 		noVerifySSLUsage             = "Disable SSL Peer Verification for connections to AWS (no effect if behind proxy)"
-		noPromptDefaultValue         = false
+		noPromptDefaultValue         = true
 		noPromptUsage                = "Do not prompt for input and accept the default choice"
 		disableLeaklessDefaultValue  = false
 		disableLeaklessUsage         = "Disable leakless if you are having issues with it"
