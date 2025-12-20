@@ -132,17 +132,27 @@ go-aws-azure-login -force-refresh
 ### Display Modes
 
 ```bash
-# GUI mode (default) - visible browser window for login
+# GUI mode (default) - visible browser with auto-fill
 go-aws-azure-login -mode gui
 
-# CLI mode - headless browser, prompts in terminal
+# CLI mode - headless browser with auto-fill
 go-aws-azure-login -mode cli
 
-# Debug mode - visible browser with CLI prompts (for troubleshooting)
+# Debug mode - visible browser, manual operation only (for troubleshooting)
 go-aws-azure-login -mode debug
 ```
 
-> **MFA Compatibility**: If your MFA requires viewing a number on screen (e.g., Microsoft Authenticator number matching), **do not use CLI mode**. The headless browser hides the screen, making it impossible to see the verification code. Use GUI mode instead.
+| Mode | Browser Visible | Auto-fill |
+|------|-----------------|-----------|
+| gui | Yes | Yes |
+| cli | No | Yes |
+| debug | Yes | No |
+
+> **MFA Compatibility**: If your MFA requires viewing a number on screen (e.g., Microsoft Authenticator number matching), **do not use CLI mode**. The headless browser hides the screen, making it impossible to see the verification code. Use GUI or Debug mode instead.
+
+### Exiting
+
+Press `q` + Enter to quit the program at any time. (Note: Ctrl+C may not work as it's intercepted by the browser process.)
 
 ### All Options
 
