@@ -8,7 +8,31 @@ import (
 )
 
 func configureProfile(profileName string) {
+	// Ask for profile name first
+	promptedName := ""
+	err := survey.AskOne(&survey.Input{
+		Message: "Profile name:",
+		Default: profileName,
+	}, &promptedName)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to get profile name")
+	}
+	if promptedName != "" {
+		profileName = promptedName
+	}
+
 	profile := getProfileConfig(profileName)
+
+	// Use intermediate struct to avoid survey's pointer type issues
+	answers := struct {
+		TenantID             string `survey:"tenantId"`
+		AppIDUri             string `survey:"appIdUri"`
+		Username             string `survey:"username"`
+		OktaUsername         string `survey:"oktaUsername"`
+		RememberMe           bool   `survey:"rememberMe"`
+		DefaultRoleArn       string `survey:"defaultRoleArn"`
+		DefaultDurationHours string `survey:"defaultDurationHours"`
+	}{}
 
 	var qs = []*survey.Question{
 		{
@@ -27,21 +51,11 @@ func configureProfile(profileName string) {
 		},
 		{
 			Name:   "oktaUsername",
-			Prompt: &survey.Input{Message: "Default Okta Username:", Default: stringPointerToString(profile.OktaDefaultUsername)},
-			Transform: func(ans interface{}) interface{} {
-				if str, ok := ans.(string); ok {
-					if str != "" {
-						return &str
-					}
-					return nil
-				}
-				return nil
-			},
+			Prompt: &survey.Input{Message: "Default Okta Username (leave empty if not using Okta):", Default: stringPointerToString(profile.OktaDefaultUsername)},
 		},
 		{
-			Name:     "rememberMe",
-			Prompt:   &survey.Confirm{Message: "Stay logged in: skip authentication while refreshing aws credentials", Default: profile.AzureDefaultRememberMe},
-			Validate: survey.Required,
+			Name:   "rememberMe",
+			Prompt: &survey.Confirm{Message: "Stay logged in: skip authentication while refreshing aws credentials", Default: profile.AzureDefaultRememberMe},
 		},
 		{
 			Name:   "defaultRoleArn",
@@ -51,19 +65,38 @@ func configureProfile(profileName string) {
 			Name:   "defaultDurationHours",
 			Prompt: &survey.Input{Message: "Default Session Duration Hours (up to 12):", Default: profile.AzureDefaultDurationHours},
 			Validate: func(val interface{}) error {
-				if str, ok := val.(string); !ok {
-					return errors.New("invalid number")
-				} else if n, err := strconv.ParseInt(str, 10, 64); err != nil || n <= 0 || n > 12 {
-					return errors.New("duration hours must be between 0 and 12")
+				str, ok := val.(string)
+				if !ok {
+					return errors.New("invalid input")
+				}
+				if str == "" {
+					return nil // Allow empty for default
+				}
+				n, err := strconv.ParseInt(str, 10, 64)
+				if err != nil || n <= 0 || n > 12 {
+					return errors.New("duration hours must be between 1 and 12")
 				}
 				return nil
 			},
 		},
 	}
 
-	err := survey.Ask(qs, &profile)
+	err = survey.Ask(qs, &answers)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to get profile configuration answers")
+	}
+
+	// Map answers to profile
+	profile.AzureTenantID = answers.TenantID
+	profile.AzureAppIDUri = answers.AppIDUri
+	profile.AzureDefaultUsername = answers.Username
+	profile.AzureDefaultRememberMe = answers.RememberMe
+	profile.AzureDefaultRoleArn = answers.DefaultRoleArn
+	profile.AzureDefaultDurationHours = answers.DefaultDurationHours
+	if answers.OktaUsername != "" {
+		profile.OktaDefaultUsername = &answers.OktaUsername
+	} else {
+		profile.OktaDefaultUsername = nil
 	}
 
 	setProfileConfig(profileName, profile)

@@ -33,8 +33,10 @@ func init() {
 			os.Exit(0)
 		}
 	}()
+}
 
-	// Monitor stdin for 'q' to quit (workaround for Chromium intercepting Ctrl+C)
+// startStdinMonitor monitors stdin for 'q' to quit (workaround for Chromium intercepting Ctrl+C)
+func startStdinMonitor() {
 	go func() {
 		reader := bufio.NewReader(os.Stdin)
 		for {
@@ -146,6 +148,7 @@ func main() {
 	if configure {
 		configureProfile(profileName)
 	} else {
+		startStdinMonitor()
 		log.Info().Msg("Press 'q' + Enter to quit")
 		done := make(chan struct{})
 		go func() {
