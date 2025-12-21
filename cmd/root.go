@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -13,11 +14,35 @@ import (
 )
 
 var (
-	// Version information (set at build time)
+	// Version information (set at build time via ldflags, or auto-detected)
 	Version   = "dev"
 	GitCommit = "unknown"
 	BuildDate = "unknown"
 )
+
+func init() {
+	// Auto-detect version from build info (works with go install)
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if Version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			Version = info.Main.Version
+		}
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				if GitCommit == "unknown" && setting.Value != "" {
+					GitCommit = setting.Value
+					if len(GitCommit) > 7 {
+						GitCommit = GitCommit[:7]
+					}
+				}
+			case "vcs.time":
+				if BuildDate == "unknown" && setting.Value != "" {
+					BuildDate = setting.Value
+				}
+			}
+		}
+	}
+}
 
 // Global context for graceful shutdown
 var appCtx context.Context
