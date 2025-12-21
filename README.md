@@ -20,7 +20,7 @@ go install github.com/ZhuMon/go-aws-azure-login@latest
 
 1. **Configure a profile:**
    ```bash
-   go-aws-azure-login -configure
+   go-aws-azure-login configure
    ```
 
 2. **Log in:**
@@ -41,10 +41,10 @@ Run the configuration wizard:
 
 ```bash
 # Configure the default profile
-go-aws-azure-login -configure
+go-aws-azure-login configure
 
 # Configure a named profile
-go-aws-azure-login -configure -profile myprofile
+go-aws-azure-login configure -p myprofile
 ```
 
 You'll need:
@@ -94,7 +94,7 @@ During configuration, you can enable session persistence:
 When enabled, subsequent logins reuse session cookies to skip the username/password prompts:
 
 ```bash
-go-aws-azure-login -no-prompt
+go-aws-azure-login --no-prompt
 ```
 
 > **Important**: This feature will **not work** if your organization's IT policy requires MFA verification on every login. In that case, you'll still need to complete MFA each time regardless of this setting.
@@ -108,38 +108,41 @@ go-aws-azure-login -no-prompt
 go-aws-azure-login
 
 # Login with a named profile
-go-aws-azure-login -profile myprofile
+go-aws-azure-login -p myprofile
+
+# Login with multiple profiles (comma-separated)
+go-aws-azure-login -p dev,staging,prod
 
 # Use AWS_PROFILE environment variable
 AWS_PROFILE=myprofile go-aws-azure-login
 
 # Skip prompts (uses saved/environment credentials)
-go-aws-azure-login -no-prompt
+go-aws-azure-login --no-prompt
 
 # Login all configured profiles
-go-aws-azure-login -all-profiles
+go-aws-azure-login -a
 
 # Force credential refresh (even if not expired)
-go-aws-azure-login -force-refresh
+go-aws-azure-login -f
 ```
 
 > **Note**: The tool automatically skips login if credentials are still valid. You'll see status messages like:
 > - `INF Credentials still valid, skipping refresh profile=myprofile`
 > - `INF Login successful profile=myprofile`
 >
-> Use `-force-refresh` to force a new login even when credentials haven't expired.
+> Use `-f` or `--force-refresh` to force a new login even when credentials haven't expired.
 
 ### Display Modes
 
 ```bash
 # GUI mode (default) - visible browser with auto-fill
-go-aws-azure-login -mode gui
+go-aws-azure-login -m gui
 
 # CLI mode - headless browser with auto-fill
-go-aws-azure-login -mode cli
+go-aws-azure-login -m cli
 
 # Debug mode - visible browser, manual operation only (for troubleshooting)
-go-aws-azure-login -mode debug
+go-aws-azure-login -m debug
 ```
 
 | Mode | Browser Visible | Auto-fill |
@@ -154,20 +157,28 @@ go-aws-azure-login -mode debug
 
 Press `q` + Enter to quit the program at any time. (Note: Ctrl+C may not work as it's intercepted by the browser process.)
 
-### All Options
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `login` | Log in to AWS (default if no command specified) |
+| `configure` | Run configuration wizard |
+| `completion` | Generate shell completion script |
+| `version` | Print version information |
+
+### Flags
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `-profile` | `-p` | Profile name to use |
-| `-all-profiles` | `-a` | Login all configured profiles |
-| `-force-refresh` | `-f` | Force credential refresh |
-| `-configure` | `-c` | Run configuration wizard |
-| `-mode` | `-m` | Display mode: `gui` (default), `cli`, or `debug` |
-| `-no-prompt` | | Skip interactive prompts (default: true) |
-| `-no-verify-ssl` | | Disable SSL verification for AWS |
-| `-disable-leakless` | | Disable leakless mode (troubleshooting) |
-| `-fastpass` | | Use Okta FastPass verification (untested) |
-| `-system-browser` | | Use system browser instead of embedded |
+| `--profile` | `-p` | Profile name(s) to use (comma-separated for multiple) |
+| `--all-profiles` | `-a` | Login all configured profiles |
+| `--force-refresh` | `-f` | Force credential refresh |
+| `--mode` | `-m` | Display mode: `gui` (default), `cli`, or `debug` |
+| `--no-prompt` | | Skip interactive prompts (default: true) |
+| `--no-verify-ssl` | | Disable SSL verification for AWS |
+| `--disable-leakless` | | Disable leakless mode (troubleshooting) |
+| `--fastpass` | | Use Okta FastPass verification (untested) |
+| `--system-browser` | | Use system browser instead of embedded |
 
 ## Automation
 
@@ -177,7 +188,7 @@ Useful for keeping credentials fresh with a cron job:
 
 ```bash
 # Refresh all profiles without prompts
-go-aws-azure-login -all-profiles -no-prompt
+go-aws-azure-login -a --no-prompt
 ```
 
 Credentials are only refreshed if they expire within 11 minutes, so running this frequently is safe.
@@ -185,7 +196,7 @@ Credentials are only refreshed if they expire within 11 minutes, so running this
 Example cron entry (every 5 minutes):
 
 ```cron
-*/5 * * * * /path/to/go-aws-azure-login -all-profiles -no-prompt
+*/5 * * * * /path/to/go-aws-azure-login -a --no-prompt
 ```
 
 > **Note**: This only works reliably if your organization allows session persistence. If MFA is required each login, automation is not possible.
@@ -235,17 +246,65 @@ region = cn-north-1
 ### Browser issues
 
 Try these flags:
-- `-mode debug` - See what's happening in the browser
-- `-disable-leakless` - If you see zombie browser processes
-- `-system-browser` - Use your installed browser instead of embedded
+- `-m debug` - See what's happening in the browser
+- `--disable-leakless` - If you see zombie browser processes
+- `--system-browser` - Use your installed browser instead of embedded
 
 ### MFA not working
 
-Use `-mode gui` to complete MFA in a visible browser window.
+Use `-m gui` to complete MFA in a visible browser window.
 
 ### SSL errors
 
-Use `-no-verify-ssl` if you're behind a corporate proxy with SSL inspection.
+Use `--no-verify-ssl` if you're behind a corporate proxy with SSL inspection.
+
+## Shell Completion
+
+Enable tab completion for commands, flags, and profile names.
+
+### Zsh (macOS)
+
+```bash
+# Generate completion script to zsh site-functions
+sudo mkdir -p /usr/local/share/zsh/site-functions
+go-aws-azure-login completion zsh | sudo tee /usr/local/share/zsh/site-functions/_go-aws-azure-login > /dev/null
+
+# Clear completion cache and reload shell
+rm -f ~/.zcompdump* && exec zsh
+```
+
+### Zsh (Linux)
+
+```bash
+# Generate completion script to a directory in fpath
+mkdir -p ~/.local/share/zsh/site-functions
+go-aws-azure-login completion zsh > ~/.local/share/zsh/site-functions/_go-aws-azure-login
+
+# Clear completion cache and reload shell
+rm -f ~/.zcompdump* && exec zsh
+```
+
+### Bash
+
+```bash
+# Linux
+go-aws-azure-login completion bash > /etc/bash_completion.d/go-aws-azure-login
+
+# macOS (with Homebrew)
+go-aws-azure-login completion bash > $(brew --prefix)/etc/bash_completion.d/go-aws-azure-login
+```
+
+### Fish
+
+```bash
+go-aws-azure-login completion fish > ~/.config/fish/completions/go-aws-azure-login.fish
+```
+
+After setup, you can use Tab to complete:
+- Commands: `go-aws-azure-login <TAB>` shows `login`, `configure`, `completion`, `version`
+- Flags: `go-aws-azure-login --<TAB>` shows available flags
+- Profiles: `go-aws-azure-login -p <TAB>` shows profiles from `~/.aws/config`
+- Mode: `go-aws-azure-login -m <TAB>` shows `gui`, `cli`, `debug`
 
 ## License
 

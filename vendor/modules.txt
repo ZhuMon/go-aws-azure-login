@@ -122,6 +122,9 @@ github.com/go-rod/rod/lib/utils
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
+# github.com/inconshreveable/mousetrap v1.1.0
+## explicit; go 1.18
+github.com/inconshreveable/mousetrap
 # github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 ## explicit
 github.com/kballard/go-shellquote
@@ -139,6 +142,12 @@ github.com/mgutz/ansi
 github.com/rs/zerolog
 github.com/rs/zerolog/internal/cbor
 github.com/rs/zerolog/internal/json
+# github.com/spf13/cobra v1.10.2
+## explicit; go 1.15
+github.com/spf13/cobra
+# github.com/spf13/pflag v1.0.9
+## explicit; go 1.12
+github.com/spf13/pflag
 # github.com/ysmood/fetchup v0.3.0
 ## explicit; go 1.21
 github.com/ysmood/fetchup
