@@ -124,6 +124,10 @@ go-aws-azure-login -a
 
 # Force credential refresh (even if not expired)
 go-aws-azure-login -f
+
+# Batch login: continue with the next profile when one fails
+go-aws-azure-login -p dev,staging,prod -k
+go-aws-azure-login -a --continue-on-error
 ```
 
 > **Note**: The tool automatically skips login if credentials are still valid. You'll see status messages like:
@@ -179,6 +183,7 @@ Press `q` + Enter to quit the program at any time. (Note: Ctrl+C may not work as
 | `--disable-leakless` | | Disable leakless mode (troubleshooting) |
 | `--fastpass` | | Use Okta FastPass verification (untested) |
 | `--system-browser` | | Use system browser instead of embedded |
+| `--continue-on-error` | `-k` | In batch login, skip a failed profile and continue with the next. Process exits non-zero if any profile failed. |
 
 ## Automation
 

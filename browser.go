@@ -149,12 +149,12 @@ func runStateLoop(ctx context.Context, page *rod.Page, samlResponseChan <-chan s
 	return samlResponse
 }
 
-func performLogin(parentCtx context.Context, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) string {
+func performLogin(parentCtx context.Context, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) (string, error) {
 	browser, cleanup := createBrowser(parentCtx, showBrowser, disableLeakless, useSystemBrowser)
 	defer cleanup()
 
 	if browser == nil {
-		return ""
+		return "", nil
 	}
 
 	router := browser.HijackRequests()
@@ -171,7 +171,7 @@ func performLogin(parentCtx context.Context, urlString string, noPrompt bool, de
 
 	page, err := browser.Page(proto.TargetCreateTarget{URL: ""})
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create page")
+		return "", fmt.Errorf("create page: %w", err)
 	}
 
 	// Set viewport to match window size so content is properly centered
@@ -199,7 +199,7 @@ func performLogin(parentCtx context.Context, urlString string, noPrompt bool, de
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 	err = page.Navigate(urlString)
 	if err != nil {
-		log.Fatal().Err(err).Str("url", urlString).Msg("Failed to navigate to login URL")
+		return "", fmt.Errorf("navigate to login URL %s: %w", urlString, err)
 	}
 	wait()
 
@@ -214,10 +214,10 @@ func performLogin(parentCtx context.Context, urlString string, noPrompt bool, de
 		PromptedStates:      make(map[string]bool),
 	}
 
-	return runStateLoop(ctx, page, samlResponseChan, handlerCtx, fastpass)
+	return runStateLoop(ctx, page, samlResponseChan, handlerCtx, fastpass), nil
 }
 
-func performLoginWithBrowser(parentCtx context.Context, browser *rod.Browser, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, fastpass bool) string {
+func performLoginWithBrowser(parentCtx context.Context, browser *rod.Browser, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, fastpass bool) (string, error) {
 	router := browser.HijackRequests()
 	defer func() {
 		if err := router.Stop(); err != nil {
@@ -232,7 +232,7 @@ func performLoginWithBrowser(parentCtx context.Context, browser *rod.Browser, ur
 
 	page, err := browser.Page(proto.TargetCreateTarget{URL: ""})
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create page")
+		return "", fmt.Errorf("create page: %w", err)
 	}
 
 	// Set viewport to match window size so content is properly centered
@@ -260,7 +260,7 @@ func performLoginWithBrowser(parentCtx context.Context, browser *rod.Browser, ur
 	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 	err = page.Navigate(urlString)
 	if err != nil {
-		log.Fatal().Err(err).Str("url", urlString).Msg("Failed to navigate to login URL")
+		return "", fmt.Errorf("navigate to login URL %s: %w", urlString, err)
 	}
 	wait()
 
@@ -282,5 +282,5 @@ func performLoginWithBrowser(parentCtx context.Context, browser *rod.Browser, ur
 		log.Error().Err(err).Msg("Failed to close page")
 	}
 
-	return samlResponse
+	return samlResponse, nil
 }

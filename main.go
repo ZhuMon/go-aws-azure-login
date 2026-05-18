@@ -12,14 +12,14 @@ var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().
 
 func init() {
 	// Set up callback functions for cmd package
-	cmd.LoginFunc = func(profile string, opts cmd.LoginOptions) {
-		login(profile, convertOptions(opts))
+	cmd.LoginFunc = func(profile string, opts cmd.LoginOptions) error {
+		return login(profile, convertOptions(opts))
 	}
-	cmd.LoginAllFunc = func(opts cmd.LoginOptions) {
-		loginAll(convertOptions(opts))
+	cmd.LoginAllFunc = func(opts cmd.LoginOptions) error {
+		return loginAll(convertOptions(opts))
 	}
-	cmd.LoginMultipleFunc = func(profiles []string, opts cmd.LoginOptions) {
-		loginMultiple(profiles, convertOptions(opts))
+	cmd.LoginMultipleFunc = func(profiles []string, opts cmd.LoginOptions) error {
+		return loginMultiple(profiles, convertOptions(opts))
 	}
 	cmd.ConfigureFunc = configureProfile
 }
@@ -43,6 +43,7 @@ func convertOptions(opts cmd.LoginOptions) LoginOptions {
 		UseSystemBrowser: opts.UseSystemBrowser,
 		AwsNoVerifySsl:   opts.AwsNoVerifySsl,
 		ForceRefresh:     opts.ForceRefresh,
+		ContinueOnError:  opts.ContinueOnError,
 	}
 }
 

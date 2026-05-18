@@ -56,6 +56,7 @@ type LoginOptions struct {
 	UseSystemBrowser bool
 	AwsNoVerifySsl   bool
 	ForceRefresh     bool
+	ContinueOnError  bool
 }
 
 type HandlerContext struct {

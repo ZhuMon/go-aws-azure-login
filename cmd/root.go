@@ -92,6 +92,7 @@ func init() {
 	rootCmd.Flags().Bool("disable-leakless", false, "Disable leakless mode (troubleshooting)")
 	rootCmd.Flags().Bool("fastpass", false, "Use Okta FastPass verification")
 	rootCmd.Flags().Bool("system-browser", false, "Use system browser instead of embedded")
+	rootCmd.Flags().BoolP("continue-on-error", "k", false, "Continue with the next profile when one fails (batch mode only)")
 
 	// Register completion function for profile flag
 	rootCmd.RegisterFlagCompletionFunc("profile", completeProfiles)
@@ -130,6 +131,9 @@ func GetCancel() context.CancelFunc {
 func Execute() {
 	defer appCancel()
 	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+	if loginErr != nil {
 		os.Exit(1)
 	}
 }

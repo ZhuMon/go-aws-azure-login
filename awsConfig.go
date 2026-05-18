@@ -74,7 +74,7 @@ func getProfileConfig(profileName string) profileConfig {
 	}
 }
 
-func isProfileAboutToExpire(profileName string) bool {
+func isProfileAboutToExpire(profileName string) (bool, error) {
 	config := load(CREDENTIALS)
 
 	section := config.Section(profileName)
@@ -87,13 +87,13 @@ func isProfileAboutToExpire(profileName string) bool {
 		var err error
 		expirationDate, err = time.Parse(timeFormat, awsExpiration)
 		if err != nil {
-			log.Fatal().Err(err).Str("profile", profileName).Msg("Invalid profile expiration format")
+			return false, fmt.Errorf("invalid profile expiration format for %s: %w", profileName, err)
 		}
 	}
 
 	timeDifference := time.Until(expirationDate)
 
-	return timeDifference.Milliseconds() < refreshLimitInMs
+	return timeDifference.Milliseconds() < refreshLimitInMs, nil
 }
 
 func setProfileCredentials(profileName string, values profileCredentials) {

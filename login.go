@@ -1,12 +1,19 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
 
 	"github.com/go-rod/rod"
 )
+
+// profileResult records the outcome of a single profile in a batch login.
+type profileResult struct {
+	name string
+	err  error
+}
 
 const (
 	AWS_SAML_ENDPOINT     = "https://signin.aws.amazon.com/saml"
@@ -91,11 +98,15 @@ func loadProfile(profileName string) profileConfig {
 	return profile
 }
 
-func login(profileName string, opts LoginOptions) {
+func login(profileName string, opts LoginOptions) error {
 	// Check if credentials are still valid (unless force refresh is requested)
-	if !opts.ForceRefresh && !isProfileAboutToExpire(profileName) {
+	expiring, err := isProfileAboutToExpire(profileName)
+	if err != nil {
+		return err
+	}
+	if !opts.ForceRefresh && !expiring {
 		log.Info().Str("profile", profileName).Msg("Credentials still valid, skipping refresh")
-		return
+		return nil
 	}
 
 	log.Info().Str("profile", profileName).Msg("Starting login")
@@ -114,27 +125,39 @@ func login(profileName string, opts LoginOptions) {
 
 	loginUrl := createLoginUrl(profile.AzureAppIDUri, profile.AzureTenantID, assertionConsumerServiceURL)
 
-	saml := performLogin(opts.Ctx, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.IsDebug, opts.ShowBrowser, opts.DisableLeakless, opts.FastPass, opts.UseSystemBrowser)
+	saml, err := performLogin(opts.Ctx, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.IsDebug, opts.ShowBrowser, opts.DisableLeakless, opts.FastPass, opts.UseSystemBrowser)
+	if err != nil {
+		return err
+	}
 
 	if saml == "" {
 		log.Info().Str("profile", profileName).Msg("Login cancelled")
-		return
+		return nil
 	}
 
 	log.Info().Msg("SAML response received, parsing roles")
 
-	roles := parseRolesFromSamlResponse(saml)
+	roles, err := parseRolesFromSamlResponse(saml)
+	if err != nil {
+		return err
+	}
 
 	log.Info().Int("count", len(roles)).Msg("Roles found")
 
-	rl, durationHours := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
+	rl, durationHours, err := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
+	if err != nil {
+		return err
+	}
 
-	assumeRole(profileName, saml, rl, durationHours, opts.AwsNoVerifySsl, profile.Region)
+	if err := assumeRole(profileName, saml, rl, durationHours, opts.AwsNoVerifySsl, profile.Region); err != nil {
+		return err
+	}
 
 	log.Info().Str("profile", profileName).Msg("Login successful")
+	return nil
 }
 
-func loginAll(opts LoginOptions) {
+func loginAll(opts LoginOptions) error {
 	allProfiles := getAllProfileNames()
 
 	// Filter profiles that need refresh and are properly configured
@@ -146,39 +169,22 @@ func loginAll(opts LoginOptions) {
 			log.Debug().Str("profile", profileName).Msg("Skipping profile without azure_tenant_id")
 			continue
 		}
-		if !opts.ForceRefresh && !isProfileAboutToExpire(profileName) {
+		expiring, err := isProfileAboutToExpire(profileName)
+		if err != nil {
+			log.Warn().Err(err).Str("profile", profileName).Msg("Skipping profile with invalid expiration")
+			continue
+		}
+		if !opts.ForceRefresh && !expiring {
 			continue
 		}
 		profilesToLogin = append(profilesToLogin, profileName)
 	}
 
-	if len(profilesToLogin) == 0 {
-		log.Info().Msg("No profiles need refresh")
-		return
-	}
-
-	// Create browser once and reuse for all profiles
-	browser, cleanup := createBrowser(opts.Ctx, opts.ShowBrowser, opts.DisableLeakless, opts.UseSystemBrowser)
-	defer cleanup()
-
-	if browser == nil {
-		return
-	}
-
-	for i, profileName := range profilesToLogin {
-		// Check if context was cancelled (e.g., Ctrl+C)
-		select {
-		case <-opts.Ctx.Done():
-			return
-		default:
-		}
-		log.Info().Int("current", i+1).Int("total", len(profilesToLogin)).Str("profile", profileName).Msg("Logging in profile")
-		loginWithBrowser(browser, profileName, opts)
-	}
+	return runBatchLogin(profilesToLogin, opts)
 }
 
 // loginMultiple logs in to a specific list of profiles
-func loginMultiple(profileNames []string, opts LoginOptions) {
+func loginMultiple(profileNames []string, opts LoginOptions) error {
 	// Filter profiles that need refresh
 	var profilesToLogin []string
 	for _, profileName := range profileNames {
@@ -188,16 +194,30 @@ func loginMultiple(profileNames []string, opts LoginOptions) {
 			log.Warn().Str("profile", profileName).Msg("Skipping profile without azure_tenant_id")
 			continue
 		}
-		if !opts.ForceRefresh && !isProfileAboutToExpire(profileName) {
+		expiring, err := isProfileAboutToExpire(profileName)
+		if err != nil {
+			log.Warn().Err(err).Str("profile", profileName).Msg("Skipping profile with invalid expiration")
+			continue
+		}
+		if !opts.ForceRefresh && !expiring {
 			log.Debug().Str("profile", profileName).Msg("Skipping profile - credentials still valid")
 			continue
 		}
 		profilesToLogin = append(profilesToLogin, profileName)
 	}
 
+	return runBatchLogin(profilesToLogin, opts)
+}
+
+// runBatchLogin processes a list of profiles sequentially using a single shared browser.
+// When opts.ContinueOnError is true, per-profile failures are recorded and the loop
+// continues; otherwise the loop aborts on first failure. A summary is printed in both
+// modes whenever more than one profile was attempted, and an aggregate error is
+// returned when any profile failed.
+func runBatchLogin(profilesToLogin []string, opts LoginOptions) error {
 	if len(profilesToLogin) == 0 {
 		log.Info().Msg("No profiles need refresh")
-		return
+		return nil
 	}
 
 	// Create browser once and reuse for all profiles
@@ -205,22 +225,83 @@ func loginMultiple(profileNames []string, opts LoginOptions) {
 	defer cleanup()
 
 	if browser == nil {
-		return
+		return nil
 	}
 
-	for i, profileName := range profilesToLogin {
-		// Check if context was cancelled (e.g., Ctrl+C)
-		select {
-		case <-opts.Ctx.Done():
-			return
-		default:
-		}
-		log.Info().Int("current", i+1).Int("total", len(profilesToLogin)).Str("profile", profileName).Msg("Logging in profile")
-		loginWithBrowser(browser, profileName, opts)
-	}
+	results := runProfileLoop(profilesToLogin, opts.ContinueOnError, opts.Ctx.Done(), func(profileName string) error {
+		return runProfileSafely(browser, profileName, opts)
+	})
+
+	return finalizeBatch(results, len(profilesToLogin))
 }
 
-func loginWithBrowser(browser *rod.Browser, profileName string, opts LoginOptions) {
+// runProfileLoop runs `step` once per profile, recording the result. When
+// continueOnError is false the loop aborts on the first non-nil error.
+// When the cancel channel signals, the loop exits at the next iteration boundary.
+// Extracted so the loop control flow is unit-testable independently of the browser.
+func runProfileLoop(profiles []string, continueOnError bool, cancel <-chan struct{}, step func(string) error) []profileResult {
+	results := make([]profileResult, 0, len(profiles))
+	for i, profileName := range profiles {
+		select {
+		case <-cancel:
+			return results
+		default:
+		}
+
+		log.Info().Int("current", i+1).Int("total", len(profiles)).Str("profile", profileName).Msg("Logging in profile")
+
+		err := step(profileName)
+		results = append(results, profileResult{name: profileName, err: err})
+
+		if err != nil {
+			log.Error().Err(err).Str("profile", profileName).Msg("Profile login failed")
+			if !continueOnError {
+				return results
+			}
+		}
+	}
+	return results
+}
+
+// runProfileSafely runs loginWithBrowser and converts panics to errors so a panic
+// in one profile cannot kill the rest of the batch.
+func runProfileSafely(browser *rod.Browser, profileName string, opts LoginOptions) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during login: %v", r)
+		}
+	}()
+	return loginWithBrowser(browser, profileName, opts)
+}
+
+// finalizeBatch prints the summary and returns an aggregate error if any profile failed.
+func finalizeBatch(results []profileResult, totalAttempted int) error {
+	succeeded, failed := 0, 0
+	for _, r := range results {
+		if r.err == nil {
+			succeeded++
+		} else {
+			failed++
+		}
+	}
+
+	// Don't print a summary when only one profile was processed — keep single-profile output unchanged.
+	if totalAttempted > 1 || failed > 0 {
+		fmt.Fprintf(os.Stderr, "\nBatch summary: %d succeeded, %d failed (%d total)\n", succeeded, failed, len(results))
+		for _, r := range results {
+			if r.err != nil {
+				fmt.Fprintf(os.Stderr, "  FAILED %s: %v\n", r.name, r.err)
+			}
+		}
+	}
+
+	if failed > 0 {
+		return fmt.Errorf("%d profile(s) failed", failed)
+	}
+	return nil
+}
+
+func loginWithBrowser(browser *rod.Browser, profileName string, opts LoginOptions) error {
 	profile := loadProfile(profileName)
 
 	assertionConsumerServiceURL := AWS_SAML_ENDPOINT
@@ -235,18 +316,32 @@ func loginWithBrowser(browser *rod.Browser, profileName string, opts LoginOption
 
 	loginUrl := createLoginUrl(profile.AzureAppIDUri, profile.AzureTenantID, assertionConsumerServiceURL)
 
-	saml := performLoginWithBrowser(opts.Ctx, browser, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.IsDebug, opts.FastPass)
-
-	if saml == "" {
-		log.Info().Str("profile", profileName).Msg("Login cancelled")
-		return
+	saml, err := performLoginWithBrowser(opts.Ctx, browser, loginUrl, opts.NoPrompt, profile.AzureDefaultUsername, profile.AzureDefaultPassword, profile.OktaDefaultUsername, profile.OktaDefaultPassword, opts.IsGui, opts.IsDebug, opts.FastPass)
+	if err != nil {
+		return err
 	}
 
-	roles := parseRolesFromSamlResponse(saml)
+	if saml == "" {
+		// Empty SAML means the user closed the window or cancelled — preserved
+		// as a no-op skip to match historical single-profile behavior.
+		log.Info().Str("profile", profileName).Msg("Login cancelled")
+		return nil
+	}
 
-	rl, durationHours := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
+	roles, err := parseRolesFromSamlResponse(saml)
+	if err != nil {
+		return err
+	}
 
-	assumeRole(profileName, saml, rl, durationHours, opts.AwsNoVerifySsl, profile.Region)
+	rl, durationHours, err := askUserForRoleAndDuration(roles, opts.NoPrompt, profile.AzureDefaultRoleArn, profile.AzureDefaultDurationHours)
+	if err != nil {
+		return err
+	}
+
+	if err := assumeRole(profileName, saml, rl, durationHours, opts.AwsNoVerifySsl, profile.Region); err != nil {
+		return err
+	}
 
 	log.Info().Str("profile", profileName).Msg("Login successful")
+	return nil
 }

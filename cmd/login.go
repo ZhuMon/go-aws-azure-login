@@ -12,13 +12,16 @@ import (
 var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
 
 // LoginFunc is a callback for login operations (set by main package)
-var LoginFunc func(profile string, opts LoginOptions)
+var LoginFunc func(profile string, opts LoginOptions) error
 
 // LoginAllFunc is a callback for login all profiles (set by main package)
-var LoginAllFunc func(opts LoginOptions)
+var LoginAllFunc func(opts LoginOptions) error
 
 // LoginMultipleFunc is a callback for login multiple profiles (set by main package)
-var LoginMultipleFunc func(profiles []string, opts LoginOptions)
+var LoginMultipleFunc func(profiles []string, opts LoginOptions) error
+
+// loginErr captures the latest login failure so Execute can exit non-zero.
+var loginErr error
 
 // LoginOptions holds options for login operation
 type LoginOptions struct {
@@ -32,6 +35,7 @@ type LoginOptions struct {
 	UseSystemBrowser bool
 	AwsNoVerifySsl   bool
 	ForceRefresh     bool
+	ContinueOnError  bool
 }
 
 var loginCmd = &cobra.Command{
@@ -58,6 +62,7 @@ func init() {
 	loginCmd.Flags().Bool("disable-leakless", false, "Disable leakless mode (troubleshooting)")
 	loginCmd.Flags().Bool("fastpass", false, "Use Okta FastPass verification")
 	loginCmd.Flags().Bool("system-browser", false, "Use system browser instead of embedded")
+	loginCmd.Flags().BoolP("continue-on-error", "k", false, "Continue with the next profile when one fails (batch mode only)")
 
 	// Register completion functions
 	loginCmd.RegisterFlagCompletionFunc("mode", completeMode)
@@ -78,6 +83,7 @@ func runLogin(cmd *cobra.Command) {
 	disableLeakless := getFlagBool(cmd, "disable-leakless")
 	fastPass := getFlagBool(cmd, "fastpass")
 	useSystemBrowser := getFlagBool(cmd, "system-browser")
+	continueOnError := getFlagBool(cmd, "continue-on-error")
 
 	isGui := mode == "gui"
 	isDebug := mode == "debug"
@@ -109,32 +115,36 @@ func runLogin(cmd *cobra.Command) {
 		UseSystemBrowser: useSystemBrowser,
 		AwsNoVerifySsl:   noVerifySSL,
 		ForceRefresh:     forceRefresh,
+		ContinueOnError:  continueOnError,
 	}
 
 	startStdinMonitor()
 	log.Info().Msg("Press 'q' + Enter to quit")
 
+	loginErr = nil
 	done := make(chan struct{})
 	go func() {
+		var err error
 		if allProfiles {
 			if LoginAllFunc != nil {
-				LoginAllFunc(opts)
+				err = LoginAllFunc(opts)
 			} else {
 				fmt.Fprintln(os.Stderr, "Error: LoginAllFunc not set")
 			}
 		} else if len(profileNames) > 1 {
 			if LoginMultipleFunc != nil {
-				LoginMultipleFunc(profileNames, opts)
+				err = LoginMultipleFunc(profileNames, opts)
 			} else {
 				fmt.Fprintln(os.Stderr, "Error: LoginMultipleFunc not set")
 			}
 		} else {
 			if LoginFunc != nil {
-				LoginFunc(profileNames[0], opts)
+				err = LoginFunc(profileNames[0], opts)
 			} else {
 				fmt.Fprintln(os.Stderr, "Error: LoginFunc not set")
 			}
 		}
+		loginErr = err
 		close(done)
 	}()
 

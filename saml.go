@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -50,10 +51,18 @@ func createLoginUrl(appIDUri string, tenantID string, assertionConsumerServiceUR
 	return "https://login.microsoftonline.com/" + tenantID + "/saml2?SAMLRequest=" + url.QueryEscape(samlBase64)
 }
 
-func parseRolesFromSamlResponse(assertion string) []role {
+func roleArns(roles []role) []string {
+	arns := make([]string, len(roles))
+	for i, r := range roles {
+		arns[i] = r.roleArn
+	}
+	return arns
+}
+
+func parseRolesFromSamlResponse(assertion string) ([]role, error) {
 	b64, err := base64.StdEncoding.DecodeString(assertion)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to decode SAML response")
+		return nil, fmt.Errorf("decode SAML response: %w", err)
 	}
 
 	var roles []role
@@ -61,7 +70,7 @@ func parseRolesFromSamlResponse(assertion string) []role {
 
 	err = xml.Unmarshal(b64, &sResponse)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to unmarshal SAML response")
+		return nil, fmt.Errorf("unmarshal SAML response: %w", err)
 	}
 
 	for _, attr := range sResponse.Assertion.AttributeStatement.Attributes {
@@ -85,22 +94,23 @@ func parseRolesFromSamlResponse(assertion string) []role {
 		}
 	}
 
-	return roles
+	return roles, nil
 }
 
 func askUserForRoleAndDuration(
 	roles []role,
 	noPrompt bool,
 	defaultRoleArn string,
-	defaultDurationHours string) (r role, durationHours int32) {
-	durationHoursP, err := strconv.ParseInt(defaultDurationHours, 10, 32)
-	if err != nil && defaultDurationHours != "" {
-		log.Warn().Err(err).Str("value", defaultDurationHours).Msg("Invalid default duration hours, using 0")
+	defaultDurationHours string) (r role, durationHours int32, err error) {
+	durationHoursP, perr := strconv.ParseInt(defaultDurationHours, 10, 32)
+	if perr != nil && defaultDurationHours != "" {
+		log.Warn().Err(perr).Str("value", defaultDurationHours).Msg("Invalid default duration hours, using 0")
 	}
 	durationHours = int32(durationHoursP)
 
 	if len(roles) == 0 {
-		log.Fatal().Msg("No roles found in SAML response")
+		err = errors.New("no roles found in SAML response")
+		return
 	} else if len(roles) == 1 {
 		r = roles[0]
 	} else {
@@ -111,9 +121,18 @@ func askUserForRoleAndDuration(
 					break
 				}
 			}
+			if (role{} == r) {
+				err = fmt.Errorf("azure_default_role_arn %q not found in SAML response (available: %v)", defaultRoleArn, roleArns(roles))
+				return
+			}
 		}
 
 		if (role{} == r) {
+			if noPrompt {
+				err = fmt.Errorf("multiple roles in SAML response and azure_default_role_arn is not configured (available: %v)", roleArns(roles))
+				return
+			}
+
 			var options []string
 
 			for _, rl := range roles {
@@ -126,13 +145,20 @@ func askUserForRoleAndDuration(
 				Options: options,
 				Default: defaultRoleArn,
 			}
-			survey.AskOne(prompt, &rArn, survey.WithValidator(survey.Required))
+			if perr := survey.AskOne(prompt, &rArn, survey.WithValidator(survey.Required)); perr != nil {
+				err = fmt.Errorf("role selection: %w", perr)
+				return
+			}
 
 			for _, rl := range roles {
 				if rl.roleArn == rArn {
 					r = rl
 					break
 				}
+			}
+			if (role{} == r) {
+				err = fmt.Errorf("selected role %q not found in SAML response", rArn)
+				return
 			}
 		}
 	}
@@ -154,9 +180,9 @@ func askUserForRoleAndDuration(
 			return nil
 		}))
 
-		parsed, err := strconv.ParseInt(hq, 10, 32)
-		if err != nil {
-			log.Warn().Err(err).Str("value", hq).Msg("Invalid duration hours input, using default")
+		parsed, perr := strconv.ParseInt(hq, 10, 32)
+		if perr != nil {
+			log.Warn().Err(perr).Str("value", hq).Msg("Invalid duration hours input, using default")
 		} else {
 			durationHours = int32(parsed)
 		}
@@ -170,7 +196,11 @@ func assumeRole(
 	role role,
 	durationHours int32,
 	awsNoVerifySsl bool,
-	region *string) {
+	region *string) error {
+
+	if role.roleArn == "" || role.principalArn == "" {
+		return fmt.Errorf("refusing to assume role with empty roleArn/principalArn (likely a misconfigured azure_default_role_arn)")
+	}
 
 	durationSeconds := durationHours * 60 * 60
 	stsInput := sts.AssumeRoleWithSAMLInput{
@@ -182,7 +212,7 @@ func assumeRole(
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to load AWS config")
+		return fmt.Errorf("load AWS config: %w", err)
 	}
 
 	if region != nil {
@@ -193,7 +223,7 @@ func assumeRole(
 
 	stsResult, err := stsClient.AssumeRoleWithSAML(context.Background(), &stsInput)
 	if err != nil {
-		log.Fatal().Err(err).Str("role", role.roleArn).Msg("Failed to assume role")
+		return fmt.Errorf("assume role %s: %w", role.roleArn, err)
 	}
 
 	setProfileCredentials(profileName,
@@ -204,4 +234,5 @@ func assumeRole(
 			AwsExpiration:      (*stsResult.Credentials.Expiration).Format(timeFormat),
 		},
 	)
+	return nil
 }
