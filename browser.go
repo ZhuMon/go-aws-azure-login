@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -45,6 +49,12 @@ func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, 
 	l.Leakless(!disableLeakless)
 	l.Set("window-size", fmt.Sprintf("%d,%d", WIDTH, HEIGHT))
 
+	// The CLI exits via os.Exit (signal handler / 'q' / success path), so the
+	// browser is never closed cleanly and Chromium records exit_type "Crashed".
+	// On the next launch it restores the previous tabs, so pages pile up run
+	// after run. Reset the exit state before launching to prevent restore.
+	clearChromiumCrashState(paths[CHROMIUM])
+
 	log.Debug().Msg("Launching browser process")
 	u, err := l.Launch()
 	if err != nil {
@@ -78,6 +88,57 @@ func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, 
 	}
 
 	return browser, cleanup
+}
+
+// clearChromiumCrashState rewrites the profile's exit_type to "Normal" so the
+// next launch does not restore tabs from the previous session. The CLI exits
+// via os.Exit so the browser is never closed cleanly; Chromium then restores
+// the prior tabs from Default/Sessions, piling up pages run after run. Deleting
+// those session files removes the restore source, and resetting exit_type stops
+// the "didn't shut down correctly" path. Both are best-effort.
+func clearChromiumCrashState(userDataDir string) {
+	defaultDir := filepath.Join(userDataDir, "Default")
+
+	// Remove the saved session/tab files Chromium replays on restore.
+	sessionsDir := filepath.Join(defaultDir, "Sessions")
+	entries, err := os.ReadDir(sessionsDir)
+	if err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, "Session_") || strings.HasPrefix(name, "Tabs_") {
+				if err := os.Remove(filepath.Join(sessionsDir, name)); err != nil {
+					log.Debug().Err(err).Str("file", name).Msg("Could not remove stale session file")
+				}
+			}
+		}
+		log.Debug().Msg("Cleared Chromium saved sessions to prevent tab restore")
+	}
+
+	// Reset exit_type so Chromium doesn't treat the prior os.Exit as a crash.
+	prefsPath := filepath.Join(defaultDir, "Preferences")
+	data, err := os.ReadFile(prefsPath)
+	if err != nil {
+		return
+	}
+	var prefs map[string]any
+	if err := json.Unmarshal(data, &prefs); err != nil {
+		log.Debug().Err(err).Msg("Could not parse Chromium Preferences, skipping exit_type reset")
+		return
+	}
+	profile, ok := prefs["profile"].(map[string]any)
+	if !ok || profile["exit_type"] == "Normal" {
+		return
+	}
+	profile["exit_type"] = "Normal"
+	profile["exited_cleanly"] = true
+	updated, err := json.Marshal(prefs)
+	if err != nil {
+		log.Debug().Err(err).Msg("Could not re-encode Chromium Preferences, skipping exit_type reset")
+		return
+	}
+	if err := os.WriteFile(prefsPath, updated, 0o600); err != nil {
+		log.Debug().Err(err).Msg("Could not write Chromium Preferences, skipping exit_type reset")
+	}
 }
 
 func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- string) {
