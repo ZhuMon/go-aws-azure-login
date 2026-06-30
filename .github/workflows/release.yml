@@ -1,0 +1,37 @@
+name: release
+
+# Build cross-platform binaries and publish a GitHub release when a version
+# tag is pushed (e.g. `git tag v0.5.0 && git push origin v0.5.0`).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test
+
+      - name: Build all platforms
+        run: make build-all VERSION=${{ github.ref_name }}
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            release/go-aws-azure-login_${{ github.ref_name }}_* \
+            release/checksums.txt
