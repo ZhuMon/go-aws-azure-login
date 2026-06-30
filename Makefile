@@ -39,12 +39,14 @@ build-all: clean
 	@cd $(RELEASE) && shasum -a 256 $(BIN)_$(VERSION)_* > checksums.txt
 	@echo "artifacts in $(RELEASE)/"
 
-# Cut a GitHub release: tests, cross-compiles, then uploads via gh.
+# Cut a GitHub release as a draft: tests, cross-compiles, then uploads via gh.
+# Auto-generated notes are a starting point — edit them and publish manually.
 # Requires VERSION to match a pushed tag and gh authenticated to the repo owner.
 release: test build-all
 	gh release create $(VERSION) \
 		--title "$(VERSION)" \
 		--generate-notes \
+		--draft \
 		$(RELEASE)/$(BIN)_$(VERSION)_* \
 		$(RELEASE)/checksums.txt
 
