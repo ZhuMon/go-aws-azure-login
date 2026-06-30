@@ -80,24 +80,6 @@ func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, 
 	return browser, cleanup
 }
 
-// logPages dumps every open page/target so we can see when extra windows appear.
-func logPages(browser *rod.Browser, activeID proto.TargetTargetID, when string) {
-	pages, err := browser.Pages()
-	if err != nil {
-		log.Debug().Err(err).Str("when", when).Msg("logPages: failed to list pages")
-		return
-	}
-	log.Debug().Int("count", len(pages)).Str("when", when).Str("activeTarget", string(activeID)).Msg("logPages: open pages")
-	for i, p := range pages {
-		info, _ := p.Info()
-		url := ""
-		if info != nil {
-			url = info.URL
-		}
-		log.Debug().Int("idx", i).Str("targetID", string(p.TargetID)).Str("url", url).Bool("isActive", p.TargetID == activeID).Msg("logPages: page")
-	}
-}
-
 func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- string) {
 	err := router.Add("https://*amazon*", "", func(ctx *rod.Hijack) {
 		reqURL := ctx.Request.URL().String()
@@ -237,7 +219,6 @@ func performLogin(parentCtx context.Context, urlString string, noPrompt bool, de
 	if err != nil {
 		return "", fmt.Errorf("create page: %w", err)
 	}
-	logPages(browser, page.TargetID, "after Page() create")
 
 	// Set viewport to match window size so content is properly centered
 	err = page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
