@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +59,16 @@ If your organization uses Azure Active Directory for SSO login to the AWS consol
 this tool lets you authenticate from the command line. It handles the full Azure AD
 login flow (including MFA) and stores temporary AWS credentials for use with the
 AWS CLI and SDKs.`,
+	// Apply log level before any subcommand runs
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		levelStr, _ := cmd.Flags().GetString("log-level")
+		level, err := zerolog.ParseLevel(levelStr)
+		if err != nil {
+			return fmt.Errorf("invalid --log-level %q (use trace, debug, info, warn, error)", levelStr)
+		}
+		zerolog.SetGlobalLevel(level)
+		return nil
+	},
 	// Run login command by default when no subcommand is specified
 	Run: func(cmd *cobra.Command, args []string) {
 		loginCmd.Run(cmd, args)
@@ -82,6 +93,7 @@ func init() {
 
 	// Add persistent flags (available to all subcommands)
 	rootCmd.PersistentFlags().StringP("profile", "p", "", "Profile name(s) to use. Use comma-separated values for multiple profiles (e.g., -p dev,staging,prod)")
+	rootCmd.PersistentFlags().String("log-level", "info", "Log verbosity: trace, debug, info, warn, error")
 
 	// Copy flags from login command to root for backward compatibility
 	rootCmd.Flags().BoolP("all-profiles", "a", false, "Run for all configured profiles")
@@ -134,6 +146,7 @@ func Execute() {
 		os.Exit(1)
 	}
 	if loginErr != nil {
+		log.Error().Err(loginErr).Msg("Login failed")
 		os.Exit(1)
 	}
 }

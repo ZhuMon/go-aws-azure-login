@@ -44,6 +44,15 @@ var states = []state{
 				return
 			}
 
+			// The field can match in the DOM before it has finished rendering
+			// (visible=false). Don't mark the state handled until we've actually
+			// filled it, so the next loop iteration retries once it's visible.
+			visible, err := el.Visible()
+			if err != nil || !visible {
+				log.Debug().Bool("visible", visible).Err(err).Msg("username field not visible yet, will retry next iteration")
+				return
+			}
+
 			username := ctx.DefaultUserName
 
 			if !ctx.NoPrompt && !ctx.IsGui {
@@ -57,11 +66,7 @@ var states = []state{
 			ctx.PromptedStates["azure_username"] = true
 
 			if len(username) > 0 {
-				// Check if element is still visible before interacting
-				visible, err := el.Visible()
-				if err != nil || !visible {
-					return
-				}
+				log.Debug().Str("username", username).Msg("Filling Azure username")
 				el.MustSelectAllText().MustInput("")
 				el.MustInput(username)
 
