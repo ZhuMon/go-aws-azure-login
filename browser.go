@@ -26,18 +26,17 @@ const statePollInterval = 200 * time.Millisecond
 const chromiumRevision = 1654715
 
 func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, useSystemBrowser bool) (*rod.Browser, func()) {
-	l := launcher.New().Headless(!showBrowser).UserDataDir(paths[CHROMIUM]).Context(ctx)
-	log.Debug().
-		Bool("showBrowser", showBrowser).
-		Bool("disableLeakless", disableLeakless).
-		Bool("useSystemBrowser", useSystemBrowser).
-		Str("userDataDir", paths[CHROMIUM]).
-		Msg("Creating browser launcher")
+	// A system browser and the auto-downloaded Chromium are different major
+	// versions and must not share a profile dir (see SYSTEM_BROWSER). Decide
+	// which binary is actually used first, then pick the matching profile.
+	l := launcher.New().Headless(!showBrowser).Context(ctx)
 
+	userDataDir := paths[CHROMIUM]
 	if useSystemBrowser {
 		if path, exists := launcher.LookPath(); exists {
 			log.Info().Str("path", path).Msg("Using system browser")
 			l.Bin(path)
+			userDataDir = paths[SYSTEM_BROWSER]
 		} else {
 			log.Warn().Msg("No usable system browser found, falling back to own Chromium browser")
 			l.Revision(chromiumRevision)
@@ -46,6 +45,14 @@ func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, 
 		l.Revision(chromiumRevision)
 	}
 
+	l.UserDataDir(userDataDir)
+	log.Debug().
+		Bool("showBrowser", showBrowser).
+		Bool("disableLeakless", disableLeakless).
+		Bool("useSystemBrowser", useSystemBrowser).
+		Str("userDataDir", userDataDir).
+		Msg("Creating browser launcher")
+
 	l.Leakless(!disableLeakless)
 	l.Set("window-size", fmt.Sprintf("%d,%d", WIDTH, HEIGHT))
 
@@ -53,7 +60,7 @@ func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, 
 	// browser is never closed cleanly and Chromium records exit_type "Crashed".
 	// On the next launch it restores the previous tabs, so pages pile up run
 	// after run. Reset the exit state before launching to prevent restore.
-	clearChromiumCrashState(paths[CHROMIUM])
+	clearChromiumCrashState(userDataDir)
 
 	log.Debug().Msg("Launching browser process")
 	u, err := l.Launch()
