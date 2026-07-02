@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/ZhuMon/go-aws-azure-login/cmd"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
@@ -330,7 +332,13 @@ func runStateLoop(ctx context.Context, page *rod.Page, samlResponseChan <-chan s
 
 func performLogin(parentCtx context.Context, urlString string, noPrompt bool, defaultUserName string, defaultUserPassword *string, defaultOktaUserName *string, defaultOktaPassword *string, isGui bool, isDebug bool, showBrowser bool, disableLeakless bool, fastpass bool, useSystemBrowser bool) (string, error) {
 	browser, cleanup := createBrowser(parentCtx, showBrowser, disableLeakless, useSystemBrowser)
-	defer cleanup()
+
+	// os.Exit on the signal / 'q' paths skips defers; register the cleanup so
+	// those paths kill the browser. sync.Once prevents a double close.
+	var once sync.Once
+	safeCleanup := func() { once.Do(cleanup) }
+	cmd.RegisterCleanup(safeCleanup)
+	defer safeCleanup()
 
 	if browser == nil {
 		return "", nil

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/rs/zerolog"
@@ -50,6 +51,41 @@ var appCtx context.Context
 var appCancel context.CancelFunc
 var sigChan = make(chan os.Signal, 1)
 
+// Exit cleanups run before os.Exit on the signal / 'q' / normal paths. The CLI
+// exits via os.Exit, which skips deferred functions, so the browser's cleanup
+// (which kills the launched process) would otherwise never run and the browser
+// leaks. Callers register their cleanup here; runExitCleanup drains them once.
+var (
+	exitCleanupMu   sync.Mutex
+	exitCleanups    []func()
+	exitCleanupOnce sync.Once
+)
+
+// RegisterCleanup adds a function to run before the process exits. It is safe to
+// call from any package (e.g. main after creating the browser).
+func RegisterCleanup(fn func()) {
+	if fn == nil {
+		return
+	}
+	exitCleanupMu.Lock()
+	defer exitCleanupMu.Unlock()
+	exitCleanups = append(exitCleanups, fn)
+}
+
+// runExitCleanup runs all registered cleanups exactly once, in registration
+// order. Guarded by sync.Once so the signal path and the normal path can both
+// call it without double-running (e.g. closing the browser twice).
+func runExitCleanup() {
+	exitCleanupOnce.Do(func() {
+		exitCleanupMu.Lock()
+		fns := exitCleanups
+		exitCleanupMu.Unlock()
+		for _, fn := range fns {
+			fn()
+		}
+	})
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "go-aws-azure-login",
 	Short: "AWS login via Azure AD SSO",
@@ -87,6 +123,7 @@ func init() {
 		for sig := range sigChan {
 			fmt.Fprintf(os.Stderr, "\nReceived signal: %v, shutting down...\n", sig)
 			appCancel()
+			runExitCleanup()
 			os.Exit(0)
 		}
 	}()
@@ -123,6 +160,7 @@ func startStdinMonitor() {
 			if strings.TrimSpace(strings.ToLower(line)) == "q" {
 				fmt.Fprintln(os.Stderr, "\nQuitting...")
 				appCancel()
+				runExitCleanup()
 				os.Exit(0)
 			}
 		}
@@ -143,10 +181,16 @@ func GetCancel() context.CancelFunc {
 func Execute() {
 	defer appCancel()
 	if err := rootCmd.Execute(); err != nil {
+		runExitCleanup()
 		os.Exit(1)
 	}
 	if loginErr != nil {
+		runExitCleanup()
 		log.Error().Err(loginErr).Msg("Login failed")
 		os.Exit(1)
 	}
+	// Normal success path: os.Exit is not called here, but run cleanup anyway so
+	// the browser is killed rather than left for defer (which the signal path
+	// may preempt on a later run).
+	runExitCleanup()
 }

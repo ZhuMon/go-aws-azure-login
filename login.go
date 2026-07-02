@@ -5,7 +5,9 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 
+	"github.com/ZhuMon/go-aws-azure-login/cmd"
 	"github.com/go-rod/rod"
 )
 
@@ -222,7 +224,14 @@ func runBatchLogin(profilesToLogin []string, opts LoginOptions) error {
 
 	// Create browser once and reuse for all profiles
 	browser, cleanup := createBrowser(opts.Ctx, opts.ShowBrowser, opts.DisableLeakless, opts.UseSystemBrowser)
-	defer cleanup()
+
+	// The CLI exits via os.Exit on the signal / 'q' paths, which skips defers.
+	// Register the cleanup so those paths kill the browser before exiting;
+	// sync.Once keeps the defer and the exit hook from closing it twice.
+	var once sync.Once
+	safeCleanup := func() { once.Do(cleanup) }
+	cmd.RegisterCleanup(safeCleanup)
+	defer safeCleanup()
 
 	if browser == nil {
 		return nil
