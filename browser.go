@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/ZhuMon/go-aws-azure-login/cmd"
@@ -203,17 +201,6 @@ func hostname() string {
 		return ""
 	}
 	return h
-}
-
-// processAlive reports whether a process with the given pid currently exists.
-// signal 0 performs error checking without delivering a signal: nil or EPERM
-// (exists but not ours) means alive; ESRCH means no such process.
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- string) {
