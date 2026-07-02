@@ -4,8 +4,77 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
+
+// deadPID returns a pid that is almost certainly not running. Kernel pids are
+// assigned low and sequentially; a value near the max is safe for a unit test.
+func deadPID(t *testing.T) int {
+	t.Helper()
+	// 99999 is above the default macOS/Linux pid ceiling for normal assignment.
+	pid := 99999
+	if processAlive(pid) {
+		t.Skipf("pid %d unexpectedly alive, skipping stale-lock test", pid)
+	}
+	return pid
+}
+
+func writeSingletonLock(t *testing.T, dir, target string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "SingletonLock")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	return path
+}
+
+func TestRemoveStaleSingletonLock_RemovesDeadPidLock(t *testing.T) {
+	dir := t.TempDir()
+	host, _ := os.Hostname()
+	lock := writeSingletonLock(t, dir, host+"-"+strconv.Itoa(deadPID(t)))
+
+	removeStaleSingletonLock(dir)
+
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Errorf("stale lock should be removed, lstat err = %v", err)
+	}
+}
+
+func TestRemoveStaleSingletonLock_KeepsLiveLocalLock(t *testing.T) {
+	dir := t.TempDir()
+	host, _ := os.Hostname()
+	// Our own pid is guaranteed alive and local — the lock must survive.
+	lock := writeSingletonLock(t, dir, host+"-"+strconv.Itoa(os.Getpid()))
+
+	removeStaleSingletonLock(dir)
+
+	if _, err := os.Lstat(lock); err != nil {
+		t.Errorf("live lock should be kept, lstat err = %v", err)
+	}
+}
+
+func TestRemoveStaleSingletonLock_RemovesOtherHostLock(t *testing.T) {
+	dir := t.TempDir()
+	// A pid that happens to be alive here but under a different host name is
+	// meaningless locally and must be treated as stale.
+	lock := writeSingletonLock(t, dir, "some-other-host-"+strconv.Itoa(os.Getpid()))
+
+	removeStaleSingletonLock(dir)
+
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Errorf("other-host lock should be removed, lstat err = %v", err)
+	}
+}
+
+func TestRemoveStaleSingletonLock_MissingLockIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	// No SingletonLock present: must not panic or error.
+	removeStaleSingletonLock(dir)
+}
 
 // writePrefs writes a minimal Chromium Preferences file with the given exit_type
 // under <dir>/Default/Preferences and returns the file path.

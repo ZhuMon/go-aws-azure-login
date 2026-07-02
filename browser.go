@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -104,6 +107,8 @@ func createBrowser(ctx context.Context, showBrowser bool, disableLeakless bool, 
 // those session files removes the restore source, and resetting exit_type stops
 // the "didn't shut down correctly" path. Both are best-effort.
 func clearChromiumCrashState(userDataDir string) {
+	removeStaleSingletonLock(userDataDir)
+
 	defaultDir := filepath.Join(userDataDir, "Default")
 
 	// Remove the saved session/tab files Chromium replays on restore.
@@ -146,6 +151,67 @@ func clearChromiumCrashState(userDataDir string) {
 	if err := os.WriteFile(prefsPath, updated, 0o600); err != nil {
 		log.Debug().Err(err).Msg("Could not write Chromium Preferences, skipping exit_type reset")
 	}
+}
+
+// removeStaleSingletonLock deletes a leftover SingletonLock that no live process
+// owns. Chromium uses this lock to guarantee one process per profile and removes
+// it on clean shutdown, but the CLI exits via os.Exit so it leaks; the next
+// launch then aborts with "Failed to create SingletonLock: File exists". The
+// lock is a symlink whose target is "hostname-pid" (e.g. TW-HOST-3242). We only
+// remove it when the pid is local to this host and no longer running — a lock
+// held by a live process is left untouched so we never break an active profile.
+func removeStaleSingletonLock(userDataDir string) {
+	lockPath := filepath.Join(userDataDir, "SingletonLock")
+	target, err := os.Readlink(lockPath)
+	if err != nil {
+		// Missing lock (the common case) or not a symlink: nothing to clean up.
+		return
+	}
+
+	// Target format is "hostname-pid"; the pid is after the last dash.
+	dash := strings.LastIndex(target, "-")
+	if dash < 0 {
+		log.Debug().Str("target", target).Msg("SingletonLock target has no pid, leaving it in place")
+		return
+	}
+	host, pidStr := target[:dash], target[dash+1:]
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		log.Debug().Str("target", target).Msg("SingletonLock target pid unparsable, leaving it in place")
+		return
+	}
+
+	// Only a lock owned by a live process on THIS host is real; a pid from
+	// another host is meaningless locally, so treat it as stale and reclaim.
+	if host == hostname() && processAlive(pid) {
+		log.Debug().Int("pid", pid).Msg("SingletonLock held by a live process, leaving it in place")
+		return
+	}
+
+	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+		log.Debug().Err(err).Msg("Could not remove stale SingletonLock")
+		return
+	}
+	log.Debug().Int("pid", pid).Msg("Removed stale SingletonLock from a dead process")
+}
+
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// processAlive reports whether a process with the given pid currently exists.
+// signal 0 performs error checking without delivering a signal: nil or EPERM
+// (exists but not ours) means alive; ESRCH means no such process.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func setupRequestHijacker(router *rod.HijackRouter, samlResponseChan chan<- string) {
